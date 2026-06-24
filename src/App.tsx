@@ -808,7 +808,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <h1 className="text-lg sm:text-xl font-black text-white tracking-wider flex items-center gap-1.5">
-              旅のお供 <span className="text-xs font-normal opacity-70">ver70</span>
+              旅のお供 <span className="text-xs font-normal opacity-70">ver71</span>
             </h1>
             <span className="hidden md:inline-block text-xs text-slate-400 border-l border-white/20 pl-2">
               📍 {data.zipcode ? `〒${data.zipcode} ` : ""}{data.address || "現在地を取得中..."}
@@ -860,6 +860,22 @@ export default function App() {
         </div>
       </header>
 
+      {/* スマホ用ステータスパネル：郵便番号、住所、周囲の静かさ */}
+      <div className="md:hidden w-full bg-slate-950/60 backdrop-blur-md border-b border-white/10 px-4 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-sky-400 shrink-0">📍</span>
+          <span className="text-slate-200 truncate font-semibold">
+            {data.zipcode ? `〒${data.zipcode} ` : ""}{data.address || "現在地を取得中..."}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0 text-slate-300">
+          <span className={`text-rose-400 shrink-0 ${dbLevel > 40 ? "animate-pulse" : ""}`}>🎙️</span>
+          <span className="font-semibold">
+            周囲の静かさ: <span className="font-mono text-white bg-slate-800/80 px-1.5 py-0.5 rounded border border-white/5">{dbLevel}dB</span> ({getNoiseLabel(dbLevel)})
+          </span>
+        </div>
+      </div>
+
       {/* メインタイグリッド */}
       <main className="flex-grow w-full px-1 py-1 flex flex-col justify-start">
         {/* レスポンシブに必ず1列に4タイル（grid-cols-4）を表示し、隙間は最小限（gap-1） */}
@@ -878,7 +894,7 @@ export default function App() {
 
       {/* フッター */}
       <footer className="w-full bg-black/40 border-t border-white/5 py-3 text-center text-[10px] text-slate-500 select-none">
-        旅のお供 ver70 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
+        旅のお供 ver71 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
       </footer>
     </div>
   );
