@@ -25,7 +25,7 @@ import {
   DESTINATIONS
 } from "./utils/geo";
 import { CompanionData, TileId } from "./types";
-import { RefreshCw, MapPin, Mic, Compass, Play, Pause } from "lucide-react";
+import { RefreshCw, MapPin, Mic, Compass, Play, Pause, Maximize2 } from "lucide-react";
 
 // デフォルト/初期データ構造
 const INITIAL_COMPANION_DATA: CompanionData = {
@@ -95,6 +95,14 @@ export default function App() {
   const [dbLevel, setDbLevel] = useState<number>(0);
   const [isUpdating, setIsUpdating] = useState(false);
   const isPausedRef = useRef<boolean>(false);
+
+  const mainRef = useRef<HTMLElement | null>(null);
+
+  const handleScrollToContent = () => {
+    if (mainRef.current) {
+      mainRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  };
 
   // タイルごとの最終更新日時（タイムスタンプ）を保持。
   // これを使って各タイルの黄色いフラッシュ演出を制御する。
@@ -918,7 +926,7 @@ export default function App() {
   return (
     <div className="min-h-screen animate-travel-bg text-white font-sans flex flex-col overflow-x-hidden">
       {/* ヘッダーエリア */}
-      <header className="w-full h-[60px] bg-black/20 border-b border-white/20 sticky top-0 z-40 px-5 flex items-center justify-between shadow-lg shrink-0">
+      <header className="w-full h-[60px] bg-black/20 border-b border-white/20 relative z-40 px-5 flex items-center justify-between shadow-lg shrink-0">
         {/* ロゴと現在地の概要 */}
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-md shadow-blue-500/25">
@@ -926,30 +934,37 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <h1 className="text-lg sm:text-xl font-black text-white tracking-wider flex items-center gap-1.5">
-              旅のお供 <span className="text-xs font-normal opacity-70">ver73</span>
+              旅のお供 <span className="text-xs font-normal opacity-70">ver76</span>
             </h1>
-            <span className="hidden md:inline-block text-xs text-slate-400 border-l border-white/20 pl-2">
-              📍 {data.zipcode ? `〒${data.zipcode} ` : ""}{data.address || "現在地を取得中..."}
-            </span>
           </div>
         </div>
 
         {/* 環境音＆一括更新エリア */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* 表示拡大スクロールボタン */}
+          <button
+            onClick={handleScrollToContent}
+            className="flex items-center gap-1.5 bg-sky-600/30 hover:bg-sky-600/50 active:scale-95 transition-all font-bold border border-sky-500 px-3 py-1.5 rounded-lg text-xs sm:text-sm text-sky-200 shrink-0 select-none cursor-pointer"
+            title="画面をスクロールしてヘッダーやアドレスバーを隠し、表示領域を広げます"
+          >
+            <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span>画面を広げる</span>
+          </button>
+
           {/* 強制一括更新ボタン */}
           <button
             onClick={triggerFullUpdate}
             disabled={isUpdating}
-            className="flex items-center gap-2 bg-white/15 hover:bg-white/25 active:scale-95 disabled:opacity-50 transition-all font-bold border-2 border-white px-5 py-1.5 rounded-lg text-sm sm:text-base text-white shrink-0 select-none cursor-pointer"
+            className="flex items-center gap-2 bg-white/15 hover:bg-white/25 active:scale-95 disabled:opacity-50 transition-all font-bold border-2 border-white px-3 sm:px-5 py-1.5 rounded-lg text-xs sm:text-base text-white shrink-0 select-none cursor-pointer"
           >
-            <RefreshCw className={`w-4 h-4 ${isUpdating ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isUpdating ? "animate-spin" : ""}`} />
             <span>一括更新</span>
           </button>
         </div>
       </header>
 
-      {/* スマホ用ステータスパネル：郵便番号、住所 */}
-      <div className="md:hidden w-full bg-slate-950/60 backdrop-blur-md border-b border-white/10 px-4 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs">
+      {/* 住所表示ステータスバー (スクロールしても画面最上部に固定されるよう sticky top-0 に設定) */}
+      <div ref={mainRef} className="sticky top-0 z-30 w-full bg-slate-950/85 backdrop-blur-md border-b border-white/10 px-4 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-sky-400 shrink-0">📍</span>
           <span className="text-slate-200 truncate font-semibold">
@@ -977,7 +992,7 @@ export default function App() {
 
       {/* フッター */}
       <footer className="w-full bg-black/40 border-t border-white/5 py-3 text-center text-[10px] text-slate-500 select-none">
-        旅のお供 ver73 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
+        旅のお供 ver76 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
       </footer>
     </div>
   );
