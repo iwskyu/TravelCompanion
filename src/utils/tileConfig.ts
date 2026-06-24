@@ -56,7 +56,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       if (data.gpsAccuracy === null) return "-";
       const acc = Math.round(data.gpsAccuracy);
       const level = acc <= 10 ? "高" : acc <= 30 ? "中" : "低";
-      return `${acc}m:${level}`;
+      return `精度 ${level}\n${acc}m`;
     },
   },
   {
@@ -137,7 +137,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     render: (data) => {
       if (!data.weather) return "-";
       const info = getWeatherEmojiAndName(data.weather.code);
-      return `${info.emoji}${data.weather.temp.toFixed(1)}℃`;
+      return `${info.emoji}${info.name}\n${data.weather.temp.toFixed(1)}℃`;
     },
   },
   {
@@ -147,8 +147,8 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-yellow",
     render: (data) => {
       if (!data.precipitation) return "-";
-      const prob = data.precipitation.probability !== null ? `${data.precipitation.probability}%` : "-";
-      const amt = data.precipitation.amount !== null ? `${data.precipitation.amount}mm` : "-";
+      const prob = data.precipitation.probability !== null ? `確率 ${data.precipitation.probability}%` : "確率 -";
+      const amt = data.precipitation.amount !== null ? `水量 ${data.precipitation.amount}mm` : "水量 -";
       return `${prob}\n${amt}`;
     },
   },
@@ -291,6 +291,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-orange",
     render: (data) => {
       if (!data.river) return "-";
+      if (data.river.name === "5km以内に該当なし") return "5km以内に該当なし";
       return `${data.river.name}\n${formatDistance(data.river.distance)}`;
     },
   },
@@ -301,6 +302,10 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-orange",
     render: (data) => {
       if (!data.riverLevel) return "-";
+      if (data.riverLevel.name === "5km以内に該当なし") {
+        if (data.riverLevel.danger === "平穏") return "平穏";
+        return "5km以内に該当なし";
+      }
       return `${data.riverLevel.name}\n${data.riverLevel.level}(${data.riverLevel.danger})`;
     },
   },
@@ -313,10 +318,14 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-red",
     render: (data) => {
       if (!data.roadDensity1) return "-";
+      if (data.roadDensity1.roadName === "5km以内に該当なし") {
+        if (data.roadDensity1.info === "順調") return "順調";
+        return "5km以内に該当なし";
+      }
       const road = data.roadDensity1.roadName;
       const info = data.roadDensity1.info;
       const dist = formatDistance(data.roadDensity1.distance);
-      return `${road}:${info}\n${dist}`;
+      return `${road} (${info})\n${dist}`;
     },
   },
   {
@@ -326,10 +335,14 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-red",
     render: (data) => {
       if (!data.roadDensity2) return "-";
+      if (data.roadDensity2.roadName === "5km以内に該当なし") {
+        if (data.roadDensity2.info === "順調") return "順調";
+        return "5km以内に該当なし";
+      }
       const road = data.roadDensity2.roadName;
       const info = data.roadDensity2.info;
       const dist = formatDistance(data.roadDensity2.distance);
-      return `${road}:${info}\n${dist}`;
+      return `${road} (${info})\n${dist}`;
     },
   },
 
@@ -341,6 +354,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-brown",
     render: (data, heading) => {
       if (!data.convenience1) return "-";
+      if (data.convenience1.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.convenience1.bearing, heading);
       return `${data.convenience1.name}\n${formatDistance(data.convenience1.distance)}${arrow}`;
     },
@@ -352,6 +366,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-brown",
     render: (data, heading) => {
       if (!data.convenience2) return "-";
+      if (data.convenience2.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.convenience2.bearing, heading);
       return `${data.convenience2.name}\n${formatDistance(data.convenience2.distance)}${arrow}`;
     },
@@ -363,6 +378,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-brown",
     render: (data, heading) => {
       if (!data.toilet1) return "-";
+      if (data.toilet1.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.toilet1.bearing, heading);
       return `${data.toilet1.name}\n${formatDistance(data.toilet1.distance)}${arrow}`;
     },
@@ -374,6 +390,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-brown",
     render: (data, heading) => {
       if (!data.toilet2) return "-";
+      if (data.toilet2.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.toilet2.bearing, heading);
       return `${data.toilet2.name}\n${formatDistance(data.toilet2.distance)}${arrow}`;
     },
@@ -385,8 +402,9 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-brown",
     render: (data, heading) => {
       if (!data.wifi1) return "-";
+      if (data.wifi1.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.wifi1.bearing, heading);
-      return `${data.wifi1.name}:${formatDistance(data.wifi1.distance)}${arrow}`;
+      return `${data.wifi1.name}\n${formatDistance(data.wifi1.distance)}${arrow}`;
     },
   },
   {
@@ -396,8 +414,9 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-brown",
     render: (data, heading) => {
       if (!data.wifi2) return "-";
+      if (data.wifi2.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.wifi2.bearing, heading);
-      return `${data.wifi2.name}:${formatDistance(data.wifi2.distance)}${arrow}`;
+      return `${data.wifi2.name}\n${formatDistance(data.wifi2.distance)}${arrow}`;
     },
   },
   {
@@ -407,6 +426,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-brown",
     render: (data, heading) => {
       if (!data.gas1) return "-";
+      if (data.gas1.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.gas1.bearing, heading);
       return `${data.gas1.name}\n${formatDistance(data.gas1.distance)}${arrow}`;
     },
@@ -418,6 +438,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-brown",
     render: (data, heading) => {
       if (!data.gas2) return "-";
+      if (data.gas2.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.gas2.bearing, heading);
       return `${data.gas2.name}\n${formatDistance(data.gas2.distance)}${arrow}`;
     },
@@ -429,6 +450,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-brown",
     render: (data, heading) => {
       if (!data.parking1) return "-";
+      if (data.parking1.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.parking1.bearing, heading);
       return `${data.parking1.name}\n${formatDistance(data.parking1.distance)}${arrow}`;
     },
@@ -440,6 +462,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-brown",
     render: (data, heading) => {
       if (!data.parking2) return "-";
+      if (data.parking2.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.parking2.bearing, heading);
       return `${data.parking2.name}\n${formatDistance(data.parking2.distance)}${arrow}`;
     },
@@ -451,6 +474,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-brown",
     render: (data, heading) => {
       if (!data.roadStation1) return "-";
+      if (data.roadStation1.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.roadStation1.bearing, heading);
       return `${data.roadStation1.name}\n${formatDistance(data.roadStation1.distance)}${arrow}`;
     },
@@ -462,6 +486,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-brown",
     render: (data, heading) => {
       if (!data.roadStation2) return "-";
+      if (data.roadStation2.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.roadStation2.bearing, heading);
       return `${data.roadStation2.name}\n${formatDistance(data.roadStation2.distance)}${arrow}`;
     },
@@ -473,6 +498,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-brown",
     render: (data) => {
       if (!data.hotel) return "-";
+      if (data.hotel.name === "5km以内に該当なし") return "5km以内に該当なし";
       return `${data.hotel.name}\n${formatDistance(data.hotel.distance)}`;
     },
   },
@@ -483,6 +509,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-brown",
     render: (data) => {
       if (!data.guesthouse) return "-";
+      if (data.guesthouse.name === "5km以内に該当なし") return "5km以内に該当なし";
       return `${data.guesthouse.name}\n${formatDistance(data.guesthouse.distance)}`;
     },
   },
@@ -495,6 +522,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-red",
     render: (data, heading) => {
       if (!data.station1) return "-";
+      if (data.station1.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.station1.bearing, heading);
       return `${data.station1.line}:${data.station1.name}\n${formatDistance(data.station1.distance)}${arrow}`;
     },
@@ -506,6 +534,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-red",
     render: (data, heading) => {
       if (!data.station2) return "-";
+      if (data.station2.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.station2.bearing, heading);
       return `${data.station2.line}:${data.station2.name}\n${formatDistance(data.station2.distance)}${arrow}`;
     },
@@ -517,6 +546,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-red",
     render: (data, heading) => {
       if (!data.bus1) return "-";
+      if (data.bus1.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.bus1.bearing, heading);
       return `${data.bus1.line}:${data.bus1.name}(${formatDistance(data.bus1.distance)}${arrow})\n次 ${data.bus1.nextBus}`;
     },
@@ -528,6 +558,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-red",
     render: (data, heading) => {
       if (!data.bus2) return "-";
+      if (data.bus2.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.bus2.bearing, heading);
       return `${data.bus2.line}:${data.bus2.name}(${formatDistance(data.bus2.distance)}${arrow})\n次 ${data.bus2.nextBus}`;
     },
@@ -541,6 +572,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-brown",
     render: (data, heading) => {
       if (!data.gourmet1) return "-";
+      if (data.gourmet1.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.gourmet1.bearing, heading);
       return `${data.gourmet1.name}\n★${data.gourmet1.rating.toFixed(1)} / ${formatDistance(data.gourmet1.distance)}${arrow}`;
     },
@@ -552,6 +584,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-brown",
     render: (data, heading) => {
       if (!data.gourmet2) return "-";
+      if (data.gourmet2.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.gourmet2.bearing, heading);
       return `${data.gourmet2.name}\n★${data.gourmet2.rating.toFixed(1)} / ${formatDistance(data.gourmet2.distance)}${arrow}`;
     },
@@ -584,6 +617,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-blue",
     render: (data) => {
       if (!data.mountain) return "-";
+      if (data.mountain.name === "5km以内に該当なし") return "5km以内に該当なし";
       return `${data.mountain.name}\n標高${Math.round(data.mountain.elevation)}m ${formatDistance(data.mountain.distance)}`;
     },
   },
@@ -596,6 +630,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-purple",
     render: (data, heading) => {
       if (!data.attraction1) return "-";
+      if (data.attraction1.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.attraction1.bearing, heading);
       return `${data.attraction1.name}\n${formatDistance(data.attraction1.distance)}${arrow}`;
     },
@@ -607,6 +642,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-purple",
     render: (data, heading) => {
       if (!data.attraction2) return "-";
+      if (data.attraction2.name === "5km以内に該当なし") return "5km以内に該当なし";
       const arrow = getArrow(data.attraction2.bearing, heading);
       return `${data.attraction2.name}\n${formatDistance(data.attraction2.distance)}${arrow}`;
     },

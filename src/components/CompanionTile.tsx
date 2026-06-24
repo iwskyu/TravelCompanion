@@ -43,15 +43,18 @@ export function CompanionTile({
   }
   const valueString = typeof valueContent === "string" ? valueContent : "";
 
-  // 文字数に応じてフォントサイズを動的に決定（見切れ・省略の絶対禁止）
+  // 文字数に応じてフォントサイズを決定。可能な限り最大の統一フォントサイズを適用する
   const getFontSizeClass = (text: string) => {
     if (!text) return "text-sm sm:text-base";
     const len = text.length;
-    if (len <= 5) return "text-lg sm:text-xl md:text-2xl";
-    if (len <= 10) return "text-sm sm:text-base md:text-lg";
-    if (len <= 18) return "text-xs sm:text-sm md:text-base";
-    if (len <= 26) return "text-[11px] sm:text-xs md:text-sm";
-    return "text-[9px] sm:text-[10px] md:text-xs leading-none";
+    // 長さに応じた最大統一サイズを適用し、枠内に綺麗に収める（見切れ・省略の絶対禁止）
+    if (len <= 12) {
+      return "text-[14px] sm:text-[16px] md:text-[18px] leading-tight";
+    }
+    if (len <= 22) {
+      return "text-[12px] sm:text-[13px] md:text-[15px] leading-snug";
+    }
+    return "text-[10px] sm:text-[11px] md:text-[12px] leading-none";
   };
 
   const fontSizeClass = getFontSizeClass(valueString);
