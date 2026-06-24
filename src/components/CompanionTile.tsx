@@ -51,9 +51,9 @@ export function CompanionTile({
   const fontSizeClass = getFontSizeClass(valueString);
 
   // 枠線と背景色の設定
-  // isFlashingがtrueのときは黄色の枠線・背景になり、少し拡大して光彩シャドウを放つ
+  // isFlashingがtrueのときは黄色の枠線になり、内側を優しく光らせる（領域は拡張しない）
   const borderClass = isFlashing
-    ? "tile-updated bg-yellow-400/25 scale-[1.03] z-10 shadow-[0_0_20px_rgba(250,204,21,0.5)]"
+    ? "tile-updated bg-yellow-500/10 z-10"
     : `${config.borderColorClass} bg-black/20`;
 
   return (

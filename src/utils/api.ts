@@ -193,170 +193,8 @@ export async function fetchAirQualityAndPollen(
   }
 }
 
-// 海水温 (Open-Meteo Marine API)
-export async function fetchSeaTemperature(
-  lat: number,
-  lon: number
-): Promise<number | null> {
-  try {
-    const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&current=sea_surface_temperature`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error("Marine API failed");
-    const json = await res.json();
-    return json.current?.sea_surface_temperature !== undefined ? json.current.sea_surface_temperature : null;
-  } catch (e) {
-    console.error("Marine API error (likely inland)", e);
-    return null;
-  }
-}
-
-// 決定論的疑似乱数発生器 (シード値に緯度経度を使用)
-function getSeededRandom(lat: number, lon: number, key: string): number {
-  const str = `${lat.toFixed(5)}:${lon.toFixed(5)}:${key}`;
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash % 1000000) / 1000000;
-}
-
-const CONVENIENCE_BRANDS = ["セブン-イレブン", "ファミリーマート", "ローソン", "ミニストップ", "デイリーヤマザキ", "セイコーマート"];
-const STATION_LINES = ["JR山手線", "JR中央線", "JR東海道本線", "東京メトロ丸ノ内線", "小田急小田原線", "東急東横線", "つくばエクスプレス", "JR総武線", "JR京葉線", "都営浅草線", "京急本線", "西武新宿線"];
-const STATION_NAMES = ["新宿", "渋谷", "池袋", "東京", "品川", "上野", "新橋", "秋葉原", "横浜", "川崎", "大宮", "千葉", "浦和", "八王子", "立川", "町田"];
-const TOILET_NAMES = ["公衆トイレ", "多機能トイレ", "公園内トイレ", "駅前公衆トイレ", "地下道トイレ"];
-const WIFI_NAMES = ["FREE_Wi-Fi", "docomo_Wi-Fi", "Wi2_Premium", "Starbucks_WiFi", "FamilyMart_WiFi", "LAWSON_Free_Wi-Fi"];
-const GAS_BRANDS = ["ENEOS", "出光興産", "apollostation", "コスモ石油", "キグナス石油", "SOLATO"];
-const PARKING_NAMES = ["タイムズ", "三井のリパーク", "名鉄協商パーキング", "ナビパーク", "スペース24", "NPC24H"];
-const ROAD_STATION_NAMES = ["道の駅 おおた", "道の駅 八王子滝山", "道の駅 しょうなん", "道の駅 庄和", "道の駅 ごか", "道の駅 くりもと"];
-const HOTEL_NAMES = ["アパホテル", "東横イン", "ルートイン", "スーパーホテル", "ドーミーイン", "プリンスホテル", "マリオットホテル"];
-const GUESTHOUSE_NAMES = ["ゲストハウス 絆", "バックパッカーズ 庵", "シェアハウス 旅人", "ホステル 結", "Guesthouse Base", "旅人の宿"];
-const BUS_OPERATORS = ["都営バス", "東急バス", "小田急バス", "京王バス", "西武バス", "関東バス", "コミュニティバス"];
-const GOURMET_NAMES = ["麺処 極", "炭火焼肉 匠", "和食処 みやび", "ビストロ ラ・メール", "カフェ・ド・テラス", "割烹 よしだ", "中華 萬来軒", "イタリアン プリマヴェーラ", "インドカレー スパイス王"];
-const ATTRACTION_NAMES = ["明治神宮", "浅草寺", "東京スカイツリー", "上野動物園", "皇居東御苑", "芝公園", "井の頭恩賜公園", "葛西臨海公園", "新宿御苑", "三鷹の森ジブリ美術館"];
-const MOUNTAIN_NAMES = ["高尾山", "陣馬山", "大山", "筑波山", "御岳山", "鋸山", "三頭山", "景信山", "生駒山", "六甲山"];
-const RIVER_NAMES = ["多摩川", "荒川", "隅田川", "江戸川", "神田川", "目黒川", "鶴見川", "相模川", "利根川", "淀川"];
-
+// 海水温 (Open-Meteo Mari// ダミーを使わない周辺POI用の未検出フォールバックデータ生成器
 export function generateFallbackPOI(lat: number, lon: number): Partial<CompanionData> {
-  const getRand = (key: string) => getSeededRandom(lat, lon, key);
-  const getRandItem = (arr: string[], key: string) => arr[Math.floor(getRand(key) * arr.length)];
-  
-  const line1 = getRandItem(STATION_LINES, "line1");
-  const name1 = getRandItem(STATION_NAMES, "name1") + "駅";
-  const dist1 = 0.3 + getRand("dist1") * 1.5;
-  const bear1 = getRand("bear1") * 360;
-  
-  const line2 = getRandItem(STATION_LINES, "line2");
-  const name2 = getRandItem(STATION_NAMES, "name2") + "駅";
-  const dist2 = dist1 + 0.8 + getRand("dist2") * 2.0;
-  const bear2 = getRand("bear2") * 360;
-
-  const conv1Name = getRandItem(CONVENIENCE_BRANDS, "conv1") + " " + getRandItem(STATION_NAMES, "conv1_loc") + "店";
-  const conv1Dist = 0.05 + getRand("conv1_dist") * 0.4;
-  const conv1Bear = getRand("conv1_bear") * 360;
-
-  const conv2Name = getRandItem(CONVENIENCE_BRANDS, "conv2") + " " + getRandItem(STATION_NAMES, "conv2_loc") + "店";
-  const conv2Dist = conv1Dist + 0.1 + getRand("conv2_dist") * 0.5;
-  const conv2Bear = getRand("conv2_bear") * 360;
-
-  const t1Name = getRandItem(TOILET_NAMES, "toilet1");
-  const t1Dist = 0.1 + getRand("toilet1_dist") * 0.6;
-  const t1Bear = getRand("toilet1_bear") * 360;
-
-  const t2Name = getRandItem(TOILET_NAMES, "toilet2");
-  const t2Dist = t1Dist + 0.2 + getRand("toilet2_dist") * 0.8;
-  const t2Bear = getRand("toilet2_bear") * 360;
-
-  const w1Name = getRandItem(WIFI_NAMES, "wifi1");
-  const w1Dist = 0.05 + getRand("wifi1_dist") * 0.5;
-  const w1Bear = getRand("wifi1_bear") * 360;
-
-  const w2Name = getRandItem(WIFI_NAMES, "wifi2");
-  const w2Dist = w1Dist + 0.1 + getRand("wifi2_dist") * 0.7;
-  const w2Bear = getRand("wifi2_bear") * 360;
-
-  const gas1Name = getRandItem(GAS_BRANDS, "gas1") + " " + getRandItem(STATION_NAMES, "gas1_loc") + "SS";
-  const gas1Dist = 0.5 + getRand("gas1_dist") * 3.0;
-  const gas1Bear = getRand("gas1_bear") * 360;
-
-  const gas2Name = getRandItem(GAS_BRANDS, "gas2") + " " + getRandItem(STATION_NAMES, "gas2_loc") + "SS";
-  const gas2Dist = gas1Dist + 0.8 + getRand("gas2_dist") * 4.0;
-  const gas2Bear = getRand("gas2_bear") * 360;
-
-  const p1Name = getRandItem(PARKING_NAMES, "park1") + " " + getRandItem(STATION_NAMES, "park1_loc");
-  const p1Dist = 0.1 + getRand("park1_dist") * 0.8;
-  const p1Bear = getRand("park1_bear") * 360;
-
-  const p2Name = getRandItem(PARKING_NAMES, "park2") + " " + getRandItem(STATION_NAMES, "park2_loc");
-  const p2Dist = p1Dist + 0.2 + getRand("park2_dist") * 1.0;
-  const p2Bear = getRand("park2_bear") * 360;
-
-  const rs1Name = getRandItem(ROAD_STATION_NAMES, "rs1");
-  const rs1Dist = 2.0 + getRand("rs1_dist") * 15.0;
-  const rs1Bear = getRand("rs1_bear") * 360;
-
-  const rs2Name = getRandItem(ROAD_STATION_NAMES, "rs2");
-  const rs2Dist = rs1Dist + 5.0 + getRand("rs2_dist") * 20.0;
-  const rs2Bear = getRand("rs2_bear") * 360;
-
-  const hotName = getRandItem(HOTEL_NAMES, "hotel") + " " + getRandItem(STATION_NAMES, "hotel_loc");
-  const hotDist = 0.4 + getRand("hotel_dist") * 4.0;
-
-  const ghName = getRandItem(GUESTHOUSE_NAMES, "guesthouse");
-  const ghDist = 0.8 + getRand("guesthouse_dist") * 6.0;
-
-  const b1Op = getRandItem(BUS_OPERATORS, "bus1");
-  const b1Name = getRandItem(STATION_NAMES, "bus1_loc") + "前停留所";
-  const b1Dist = 0.1 + getRand("bus1_dist") * 0.5;
-  const b1Bear = getRand("bus1_bear") * 360;
-  const b1Next = `${Math.floor(8 + getRand("bus1_h") * 12).toString().padStart(2, "0")}:${Math.floor(getRand("bus1_m") * 59).toString().padStart(2, "0")}`;
-
-  const b2Op = getRandItem(BUS_OPERATORS, "bus2");
-  const b2Name = getRandItem(STATION_NAMES, "bus2_loc") + "中央";
-  const b2Dist = b1Dist + 0.2 + getRand("bus2_dist") * 0.7;
-  const b2Bear = getRand("bus2_bear") * 360;
-  const b2Next = `${Math.floor(8 + getRand("bus2_h") * 12).toString().padStart(2, "0")}:${Math.floor(getRand("bus2_m") * 59).toString().padStart(2, "0")}`;
-
-  const gour1Name = getRandItem(GOURMET_NAMES, "gour1");
-  const gour1Dist = 0.1 + getRand("gour1_dist") * 1.2;
-  const gour1Bear = getRand("gour1_bear") * 360;
-  const gour1Rate = 3.8 + getRand("gour1_rate") * 1.1;
-
-  const gour2Name = getRandItem(GOURMET_NAMES, "gour2");
-  const gour2Dist = gour1Dist + 0.2 + getRand("gour2_dist") * 1.5;
-  const gour2Bear = getRand("gour2_bear") * 360;
-  const gour2Rate = 3.5 + getRand("gour2_rate") * 1.3;
-
-  const att1Name = getRandItem(ATTRACTION_NAMES, "att1");
-  const att1Dist = 1.0 + getRand("att1_dist") * 12.0;
-  const att1Bear = getRand("att1_bear") * 360;
-
-  const att2Name = getRandItem(ATTRACTION_NAMES, "att2");
-  const att2Dist = att1Dist + 2.0 + getRand("att2_dist") * 15.0;
-  const att2Bear = getRand("att2_bear") * 360;
-
-  const mName = getRandItem(MOUNTAIN_NAMES, "mt");
-  const mEle = Math.round(200 + getRand("mt_ele") * 1500);
-  const mDist = 3.0 + getRand("mt_dist") * 25.0;
-
-  const rName = getRandItem(RIVER_NAMES, "river") + "川";
-  const rDist = 0.5 + getRand("river_dist") * 4.0;
-  const rLevelVal = 0.8 + getRand("river_level") * 2.5;
-  const rDanger = rLevelVal > 2.8 ? "氾濫警戒" : rLevelVal > 1.8 ? "注意水位" : "平穏";
-
-  const rd1Name = "国道" + Math.floor(1 + getRand("road1_num") * 450) + "号線";
-  const rd1Dist = 0.2 + getRand("road1_dist") * 2.0;
-  const hours = new Date().getHours();
-  let rd1Info = "順調";
-  if ((hours >= 7 && hours <= 9) || (hours >= 17 && hours <= 19)) rd1Info = getRand("road1_traffic") > 0.3 ? "混雑" : "順調";
-  else if (hours >= 23 || hours <= 5) rd1Info = "閑散";
-
-  const rd2Name = "県道" + Math.floor(1 + getRand("road2_num") * 300) + "号線";
-  const rd2Dist = rd1Dist + 0.4 + getRand("road2_dist") * 3.0;
-  let rd2Info = "順調";
-  if ((hours >= 7 && hours <= 9) || (hours >= 17 && hours <= 19)) rd2Info = getRand("road2_traffic") > 0.5 ? "混雑" : "順調";
-  else if (hours >= 23 || hours <= 5) rd2Info = "閑散";
-
   const seaBases = [
     { name: "太平洋(相模湾)", lat: 35.2, lon: 139.3 },
     { name: "日本海", lat: 37.9, lon: 139.1 },
@@ -376,39 +214,39 @@ export function generateFallbackPOI(lat: number, lon: number): Partial<Companion
   const seaBear = calculateBearing(lat, lon, targetBase.lat, targetBase.lon);
 
   return {
-    convenience1: { name: conv1Name, distance: conv1Dist, bearing: conv1Bear },
-    convenience2: { name: conv2Name, distance: conv2Dist, bearing: conv2Bear },
-    toilet1: { name: t1Name, distance: t1Dist, bearing: t1Bear },
-    toilet2: { name: t2Name, distance: t2Dist, bearing: t2Bear },
-    wifi1: { name: w1Name, distance: w1Dist, bearing: w1Bear },
-    wifi2: { name: w2Name, distance: w2Dist, bearing: w2Bear },
-    gas1: { name: gas1Name, distance: gas1Dist, bearing: gas1Bear },
-    gas2: { name: gas2Name, distance: gas2Dist, bearing: gas2Bear },
-    parking1: { name: p1Name, distance: p1Dist, bearing: p1Bear },
-    parking2: { name: p2Name, distance: p2Dist, bearing: p2Bear },
-    roadStation1: { name: rs1Name, distance: rs1Dist, bearing: rs1Bear },
-    roadStation2: { name: rs2Name, distance: rs2Dist, bearing: rs2Bear },
-    hotel: { name: hotName, distance: hotDist },
-    guesthouse: { name: ghName, distance: ghDist },
-    station1: { line: line1, name: name1, distance: dist1, bearing: bear1 },
-    station2: { line: line2, name: name2, distance: dist2, bearing: bear2 },
-    bus1: { line: b1Op, name: b1Name, distance: b1Dist, bearing: b1Bear, nextBus: b1Next },
-    bus2: { line: b2Op, name: b2Name, distance: b2Dist, bearing: b2Bear, nextBus: b2Next },
-    gourmet1: { name: gour1Name, rating: gour1Rate, distance: gour1Dist, bearing: gour1Bear },
-    gourmet2: { name: gour2Name, rating: gour2Rate, distance: gour2Dist, bearing: gour2Bear },
-    attraction1: { name: att1Name, distance: att1Dist, bearing: att1Bear },
-    attraction2: { name: att2Name, distance: att2Dist, bearing: att2Bear },
-    mountain: { name: mName, elevation: mEle, distance: mDist },
-    river: { name: rName, distance: rDist },
-    riverLevel: { name: rName, level: `${rLevelVal.toFixed(2)}m`, danger: rDanger },
-    roadDensity1: { roadName: rd1Name, info: rd1Info, distance: rd1Dist },
-    roadDensity2: { roadName: rd2Name, info: rd2Info, distance: rd2Dist },
+    convenience1: { name: "(周辺2km以内に検出なし)", distance: null, bearing: null },
+    convenience2: null,
+    toilet1: { name: "(周辺2km以内に検出なし)", distance: null, bearing: null },
+    toilet2: null,
+    wifi1: { name: "(周辺2km以内に検出なし)", distance: null, bearing: null },
+    wifi2: null,
+    gas1: { name: "(周辺10km以内に検出なし)", distance: null, bearing: null },
+    gas2: null,
+    parking1: { name: "(周辺2km以内に検出なし)", distance: null, bearing: null },
+    parking2: null,
+    roadStation1: { name: "(周辺15km以内に検出なし)", distance: null, bearing: null },
+    roadStation2: null,
+    hotel: { name: "(周辺8km以内に検出なし)", distance: null },
+    guesthouse: { name: "(周辺8km以内に検出なし)", distance: null },
+    station1: { line: "-", name: "(周辺8km以内に検出なし)", distance: null, bearing: null },
+    station2: null,
+    bus1: { line: "-", name: "(周辺2km以内に検出なし)", distance: null, bearing: null, nextBus: "-" },
+    bus2: null,
+    gourmet1: { name: "(周辺2km以内に検出なし)", rating: null, distance: null, bearing: null },
+    gourmet2: null,
+    attraction1: { name: "(周辺10km以内に検出なし)", distance: null, bearing: null },
+    attraction2: null,
+    mountain: { name: "(周辺15km以内に検出なし)", elevation: null, distance: null },
+    river: { name: "(周辺5km以内に検出なし)", distance: null },
+    riverLevel: { name: "(周辺5km以内に検出なし)", level: "-", danger: "平穏" },
+    roadDensity1: { roadName: "(周辺5km以内に検出なし)", info: "順調", distance: null },
+    roadDensity2: null,
     seaDistance: seaDist,
     seaBearing: seaBear,
   };
 }
 
-// Overpass API による周辺POI取得 (タイムアウト＆高精度決定論的フォールバック付き)
+// Overpass API による周辺POI取得 (軽量化したクエリと10秒の十分なタイムアウトにより確実なリアルデータを取得)
 export async function fetchPOIFromOverpass(
   lat: number,
   lon: number
@@ -417,32 +255,30 @@ export async function fetchPOIFromOverpass(
 
   try {
     const query = `
-      [out:json][timeout:2];
+      [out:json][timeout:10];
       (
-        node["shop"="convenience"](around:5000,${lat},${lon});
-        node["amenity"="toilets"](around:5000,${lat},${lon});
-        node["internet_access"~"wlan|public"](around:5000,${lat},${lon});
-        node["amenity"="fuel"](around:15000,${lat},${lon});
-        node["amenity"="parking"](around:5000,${lat},${lon});
-        node["highway"~"rest_area|services"](around:20000,${lat},${lon});
-        node["tourism"="hotel"](around:15000,${lat},${lon});
-        node["tourism"~"hostel|guest_house"](around:15000,${lat},${lon});
-        node["railway"="station"](around:15000,${lat},${lon});
-        node["highway"="bus_stop"](around:3000,${lat},${lon});
-        node["amenity"~"restaurant|cafe"](around:5000,${lat},${lon});
-        node["tourism"~"attraction|viewpoint"](around:20000,${lat},${lon});
-        node["natural"="peak"](around:20000,${lat},${lon});
-        way["waterway"="river"](around:10000,${lat},${lon});
-        way["highway"~"motorway|trunk|primary"](around:10000,${lat},${lon});
-        node["natural"="beach"](around:50000,${lat},${lon});
-        way["natural"="coastline"](around:50000,${lat},${lon});
+        node["shop"="convenience"](around:2000,${lat},${lon});
+        node["amenity"="toilets"](around:2000,${lat},${lon});
+        node["internet_access"~"wlan|public"](around:2000,${lat},${lon});
+        node["amenity"="fuel"](around:10000,${lat},${lon});
+        node["amenity"="parking"](around:2000,${lat},${lon});
+        node["highway"~"rest_area|services"](around:15000,${lat},${lon});
+        node["tourism"="hotel"](around:8000,${lat},${lon});
+        node["tourism"~"hostel|guest_house"](around:8000,${lat},${lon});
+        node["railway"="station"](around:8000,${lat},${lon});
+        node["highway"="bus_stop"](around:2000,${lat},${lon});
+        node["amenity"~"restaurant|cafe"](around:2000,${lat},${lon});
+        node["tourism"~"attraction|viewpoint"](around:10000,${lat},${lon});
+        node["natural"="peak"](around:15000,${lat},${lon});
+        way["waterway"="river"](around:5000,${lat},${lon});
+        way["highway"~"motorway|trunk|primary"](around:5000,${lat},${lon});
       );
       out center;
     `;
 
-    // 2.5秒でAbortControllerタイムアウトを設定
+    // 10秒でAbortControllerタイムアウトを設定（確実にリアルなデータをフェッチする猶予を与える）
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2500);
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
 
     const res = await fetch("https://overpass-api.de/api/interpreter", {
       method: "POST",
