@@ -25,7 +25,7 @@ import {
   DESTINATIONS
 } from "./utils/geo";
 import { CompanionData, TileId } from "./types";
-import { RefreshCw, MapPin, Mic, Compass } from "lucide-react";
+import { RefreshCw, MapPin, Mic, Compass, Play, Pause } from "lucide-react";
 
 // デフォルト/初期データ構造
 const INITIAL_COMPANION_DATA: CompanionData = {
@@ -92,6 +92,12 @@ export default function App() {
   const [deviceHeading, setDeviceHeading] = useState<number | null>(null);
   const [dbLevel, setDbLevel] = useState<number>(0);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isPaused, setIsPaused] = useState<boolean>(false);
+  const isPausedRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
 
   // タイルごとの最終更新日時（タイムスタンプ）を保持。
   // これを使って各タイルの黄色いフラッシュ演出を制御する。
@@ -673,6 +679,7 @@ export default function App() {
     // --- 3秒毎更新 (旧1秒毎) ---
     // 📐傾き, 🧭方角, マイクdBをまとめて3秒毎に1回だけ一括ステート描画（スロットリングして描画負荷・バッテリーを大幅節約）
     const interval3s = setInterval(() => {
+      if (isPausedRef.current) return;
       const nowStamp = Date.now();
       const heading = latestHeading.current;
       
@@ -694,6 +701,7 @@ export default function App() {
     // --- 10秒毎更新 (旧5秒毎) ---
     // 📡GPS精度, 🚗移動速度, ⛰️標高
     const interval10s = setInterval(() => {
+      if (isPausedRef.current) return;
       const nowStamp = Date.now();
       setData((prev) => ({
         ...prev,
@@ -712,12 +720,14 @@ export default function App() {
     // --- 3分毎更新 ---
     // 📮郵便番号, 🗺️現在地
     const interval3m = setInterval(() => {
+      if (isPausedRef.current) return;
       updateTileData(["zipcode", "address"]);
     }, 3 * 60 * 1000);
 
     // --- 10分毎更新 ---
     // POI（コンビニ、トイレ、駅、バス、Wi-Fi、GS、駐車場、道の駅、ホテル、グルメ、観光地、川、道路）、日の出・日没、大気汚染
     const interval10m = setInterval(() => {
+      if (isPausedRef.current) return;
       const list10m: TileId[] = [
         "tokyoDistance", "seaDistance", "fujiDistance", "prefecturalCapital",
         "wind", "humidity", "airQuality", "seaTemp", "highTide", "lowTide", "sunPosition",
@@ -733,18 +743,21 @@ export default function App() {
     // --- 15分毎更新 ---
     // 天気、降水、雨雲、紫外線
     const interval15m = setInterval(() => {
+      if (isPausedRef.current) return;
       updateTileData(["weather", "precipitation", "rainCloudApproach", "uvIndex"]);
     }, 15 * 60 * 1000);
 
     // --- 20分毎更新 ---
     // 日の出、日没
     const interval20m = setInterval(() => {
+      if (isPausedRef.current) return;
       updateTileData(["sunrise", "sunset"]);
     }, 20 * 60 * 1000);
 
     // --- 60分毎更新 ---
     // 月齢
     const interval60m = setInterval(() => {
+      if (isPausedRef.current) return;
       updateTileData(["moonAge"]);
     }, 60 * 60 * 1000);
 
@@ -789,8 +802,8 @@ export default function App() {
             <h1 className="text-lg sm:text-xl font-black text-white tracking-wider flex items-center gap-1.5">
               旅のお供 <span className="text-xs font-normal opacity-70">ver69</span>
             </h1>
-            <span className="hidden md:inline-block text-xs text-slate-400 border-l border-white/20 pl-2 max-w-[200px] truncate">
-              📍 {data.address || "現在地を取得中..."}
+            <span className="hidden md:inline-block text-xs text-slate-400 border-l border-white/20 pl-2">
+              📍 {data.zipcode ? `〒${data.zipcode} ` : ""}{data.address || "現在地を取得中..."}
             </span>
           </div>
         </div>
@@ -804,6 +817,28 @@ export default function App() {
               {dbLevel}dB ({getNoiseLabel(dbLevel)})
             </span>
           </div>
+
+          {/* 自動更新一時停止/再開ボタン */}
+          <button
+            onClick={() => setIsPaused(!isPaused)}
+            className={`flex items-center gap-1.5 transition-all font-bold border px-3 py-1.5 rounded-lg text-xs sm:text-sm select-none cursor-pointer ${
+              isPaused 
+                ? "bg-rose-600/30 border-rose-500 hover:bg-rose-600/50 text-rose-200 animate-pulse" 
+                : "bg-emerald-600/20 border-emerald-500/50 hover:bg-emerald-600/30 text-emerald-300"
+            }`}
+          >
+            {isPaused ? (
+              <>
+                <Play className="w-3.5 h-3.5" />
+                <span>更新再開</span>
+              </>
+            ) : (
+              <>
+                <Pause className="w-3.5 h-3.5" />
+                <span>更新停止</span>
+              </>
+            )}
+          </button>
 
           {/* 強制一括更新ボタン */}
           <button

@@ -63,6 +63,16 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     },
   },
   {
+    id: "elevation",
+    label: "標高",
+    emoji: "⛰️",
+    borderColorClass: "border-white",
+    render: (data) => {
+      if (data.elevation === null) return "-";
+      return `標高\n${Math.round(data.elevation)}m`;
+    },
+  },
+  {
     id: "speed",
     label: "移動速度",
     emoji: "🚗",
@@ -71,16 +81,6 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       if (data.speed === null) return "速度\n0 km/h";
       const speedKmh = Math.round(data.speed * 3.6);
       return `速度\n${speedKmh} km/h`;
-    },
-  },
-  {
-    id: "elevation",
-    label: "標高",
-    emoji: "⛰️",
-    borderColorClass: "border-white",
-    render: (data) => {
-      if (data.elevation === null) return "-";
-      return `標高\n${Math.round(data.elevation)}m`;
     },
   },
 
@@ -96,45 +96,6 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     render: (data) => {
       if (!data.moonAge) return "-";
       return `${data.moonAge.state}\n${data.moonAge.age.toFixed(1)}日`;
-    },
-  },
-  {
-    id: "sunPosition",
-    label: "太陽の位置",
-    emoji: "🌞",
-    borderColorClass: "border-indigo",
-    render: (data, heading) => {
-      if (!data.sunPosition) return "-";
-      const arrow = getArrow(data.sunPosition.bearing, heading);
-      return `${data.sunPosition.cardinal}\n向き ${arrow}`;
-    },
-  },
-
-  // ==========================================
-  // ジャンル 3: 位置・地名 (GPS基礎)
-  // 枠色: 青 (border-blue)
-  // ==========================================
-  {
-    id: "zipcode",
-    label: "郵便番号",
-    emoji: "📮",
-    borderColorClass: "border-blue",
-    render: (data) => {
-      if (!data.zipcode || data.zipcode === "-") return "-";
-      return `郵便番号\n〒${data.zipcode}`;
-    },
-  },
-  {
-    id: "address",
-    label: "現在地",
-    emoji: "🗺️",
-    borderColorClass: "border-blue",
-    render: (data) => {
-      const addr = data.address || "-";
-      if (addr.length > 8) {
-        return addr.replace(/([都府県]|市区郡)/g, "$1\n");
-      }
-      return addr;
     },
   },
 
@@ -165,17 +126,6 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     },
   },
   {
-    id: "seaDistance",
-    label: "海まで",
-    emoji: "🌊",
-    borderColorClass: "border-blue",
-    render: (data, heading) => {
-      if (data.seaDistance === null || data.seaBearing === null) return "-";
-      const arrow = getArrow(data.seaBearing, heading);
-      return `最寄り海\n${formatDistance(data.seaDistance)} ${arrow}`;
-    },
-  },
-  {
     id: "prefecturalCapital",
     label: "県庁所在地",
     emoji: "🏢",
@@ -185,6 +135,21 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const { name, distance, bearing } = data.prefecturalCapital;
       const arrow = getArrow(bearing, heading);
       return `${name}\n${formatDistance(distance)} ${arrow}`;
+    },
+  },
+
+  // ==========================================
+  // 天気/気温の直前に移動した太陽の位置
+  // ==========================================
+  {
+    id: "sunPosition",
+    label: "太陽の位置",
+    emoji: "🌞",
+    borderColorClass: "border-indigo",
+    render: (data, heading) => {
+      if (!data.sunPosition) return "-";
+      const arrow = getArrow(data.sunPosition.bearing, heading);
+      return `${data.sunPosition.cardinal}\n向き ${arrow}`;
     },
   },
 
@@ -200,7 +165,12 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     render: (data) => {
       if (!data.weather) return "-";
       const info = getWeatherEmojiAndName(data.weather.code);
-      return `${info.emoji} ${info.name}\n${data.weather.temp.toFixed(1)}℃`;
+      let minMaxText = "";
+      if (data.weather.minTemp !== undefined && data.weather.minTemp !== null &&
+          data.weather.maxTemp !== undefined && data.weather.maxTemp !== null) {
+        minMaxText = `\n${data.weather.minTemp.toFixed(1)}℃〜${data.weather.maxTemp.toFixed(1)}℃`;
+      }
+      return `${info.emoji} ${info.name}\n${data.weather.temp.toFixed(1)}℃${minMaxText}`;
     },
   },
   {
@@ -278,7 +248,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-yellow",
     render: (data) => {
       if (data.humidity === null) return "-";
-      return `相対湿度\n${data.humidity}%`;
+      return `${data.humidity}%`;
     },
   },
 
@@ -293,8 +263,18 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-green",
     render: (data) => {
       if (!data.airQuality) return "-";
-      const pollenVal = data.airQuality.pm25 !== null ? `PM2.5: ${data.airQuality.pm25.toFixed(1)}μg` : "PM2.5: -";
-      return `${data.airQuality.pollenText}\n${pollenVal}`;
+      return `${data.airQuality.pollenText}`;
+    },
+  },
+  {
+    id: "seaDistance",
+    label: "海まで",
+    emoji: "🌊",
+    borderColorClass: "border-blue",
+    render: (data, heading) => {
+      if (data.seaDistance === null || data.seaBearing === null) return "-";
+      const arrow = getArrow(data.seaBearing, heading);
+      return `最寄り海\n${formatDistance(data.seaDistance)} ${arrow}`;
     },
   },
   {
@@ -303,8 +283,8 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     emoji: "🌊",
     borderColorClass: "border-emerald",
     render: (data) => {
-      if (data.seaTemp === null) return "海面水温\n-";
-      return `海面水温\n${data.seaTemp.toFixed(1)}℃`;
+      if (data.seaTemp === null) return "-";
+      return `${data.seaTemp.toFixed(1)}℃`;
     },
   },
   {
@@ -327,6 +307,34 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       return `干潮時間\n${data.lowTide}`;
     },
   },
+
+  // ==========================================
+  // 干潮の後に移動した位置・現在地情報
+  // ==========================================
+  {
+    id: "zipcode",
+    label: "郵便番号",
+    emoji: "📮",
+    borderColorClass: "border-blue",
+    render: (data) => {
+      if (!data.zipcode || data.zipcode === "-") return "-";
+      return `郵便番号\n〒${data.zipcode}`;
+    },
+  },
+  {
+    id: "address",
+    label: "現在地",
+    emoji: "🗺️",
+    borderColorClass: "border-blue",
+    render: (data) => {
+      const addr = data.address || "-";
+      if (addr.length > 8) {
+        return addr.replace(/([都府県]|市区郡)/g, "$1\n");
+      }
+      return addr;
+    },
+  },
+
   {
     id: "river",
     label: "河川名・距離",
@@ -380,13 +388,8 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     emoji: "🛣️",
     borderColorClass: "border-red",
     render: (data) => {
-      if (!data.roadDensity2) return "-";
-      if (data.roadDensity1?.roadName === "5km以内に該当なし" && data.roadDensity1?.info === "順調") {
-        if (data.roadDensity2.info === "順調") return "順調";
-      }
-      if (data.roadDensity2.roadName === "5km以内に該当なし") {
-        if (data.roadDensity2.info === "順調") return "順調";
-        return "5km以内に該当なし";
+      if (!data.roadDensity2 || data.roadDensity2.info === "-" || data.roadDensity2.roadName === "-" || data.roadDensity2.roadName === "5km以内に該当なし") {
+        return "順調";
       }
       const road = data.roadDensity2.roadName;
       const info = data.roadDensity2.info;

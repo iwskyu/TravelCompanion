@@ -20,7 +20,7 @@ export interface CompanionData {
   fujiBearing: number | null;
   prefecturalCapital: { name: string; distance: number; bearing: number } | null;
 
-  weather: { code: number; temp: number } | null;
+  weather: { code: number; temp: number; minTemp?: number | null; maxTemp?: number | null } | null;
   precipitation: { probability: number | null; amount: number | null } | null;
   rainCloudApproach: string | null;
   uvIndex: { index: number; level: string } | null;

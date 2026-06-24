@@ -164,7 +164,7 @@ export async function fetchWeatherAndMeteorology(
 
   const runFetch = async () => {
     try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m,wind_direction_10m&hourly=precipitation_probability,uv_index&daily=sunrise,sunset&elevation=nan&timezone=auto`;
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m,wind_direction_10m&hourly=precipitation_probability,uv_index&daily=sunrise,sunset,temperature_2m_max,temperature_2m_min&elevation=nan&timezone=auto`;
       const res = await fetch(url);
       if (!res.ok) throw new Error("Open-Meteo failed");
       const json = await res.json();
@@ -174,8 +174,10 @@ export async function fetchWeatherAndMeteorology(
       const daily = json.daily;
 
       // 天気と気温
+      const minTemp = daily?.temperature_2m_min ? daily.temperature_2m_min[0] : null;
+      const maxTemp = daily?.temperature_2m_max ? daily.temperature_2m_max[0] : null;
       const weather = current
-        ? { code: current.weather_code, temp: current.temperature_2m }
+        ? { code: current.weather_code, temp: current.temperature_2m, minTemp, maxTemp }
         : null;
 
       // 降水量・降水確率
