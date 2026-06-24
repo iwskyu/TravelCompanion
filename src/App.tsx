@@ -85,6 +85,7 @@ const INITIAL_COMPANION_DATA: CompanionData = {
   attraction1: null,
   attraction2: null,
   intersection: null,
+  dbLevel: null,
 };
 
 export default function App() {
@@ -93,20 +94,7 @@ export default function App() {
   const [deviceHeading, setDeviceHeading] = useState<number | null>(null);
   const [dbLevel, setDbLevel] = useState<number>(0);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [isPaused, setIsPaused] = useState<boolean>(false);
   const isPausedRef = useRef<boolean>(false);
-
-  useEffect(() => {
-    isPausedRef.current = isPaused;
-  }, [isPaused]);
-
-  const togglePause = () => {
-    const nextPaused = !isPaused;
-    setIsPaused(nextPaused);
-    if (!nextPaused && started) {
-      triggerFullUpdate();
-    }
-  };
 
   // タイルごとの最終更新日時（タイムスタンプ）を保持。
   // これを使って各タイルの黄色いフラッシュ演出を制御する。
@@ -437,11 +425,12 @@ export default function App() {
       bearing: { angle: latestHeading.current, direction: getDirectionString(latestHeading.current) },
       gpsAccuracy: latestGps.current.accuracy,
       speed: latestGps.current.speed,
+      dbLevel: latestDb.current,
     };
 
     const immediateTileIds: TileId[] = [
       "sunPosition",
-      "tilt", "bearing", "gpsAccuracy", "speed", "elevation"
+      "tilt", "bearing", "gpsAccuracy", "speed", "elevation", "dbLevel"
     ];
 
     if (updateMoonAndTide) {
@@ -825,11 +814,13 @@ export default function App() {
         ...prev,
         tilt: { ...latestTilt.current },
         bearing: { angle: heading, direction: getDirectionString(heading) },
+        dbLevel: latestDb.current,
       }));
       setLastUpdated((prev) => ({
         ...prev,
         tilt: nowStamp,
         bearing: nowStamp,
+        dbLevel: nowStamp,
       }));
     }, 3000);
 
@@ -935,7 +926,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <h1 className="text-lg sm:text-xl font-black text-white tracking-wider flex items-center gap-1.5">
-              旅のお供 <span className="text-xs font-normal opacity-70">ver72</span>
+              旅のお供 <span className="text-xs font-normal opacity-70">ver73</span>
             </h1>
             <span className="hidden md:inline-block text-xs text-slate-400 border-l border-white/20 pl-2">
               📍 {data.zipcode ? `〒${data.zipcode} ` : ""}{data.address || "現在地を取得中..."}
@@ -945,36 +936,6 @@ export default function App() {
 
         {/* 環境音＆一括更新エリア */}
         <div className="flex items-center gap-4">
-          {/* 環境音メーター (マイクの実用) */}
-          <div className="hidden sm:flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1 rounded-lg text-[11px]">
-            <Mic className={`w-3.5 h-3.5 text-rose-500 ${dbLevel > 40 ? "animate-pulse" : ""}`} />
-            <span className="text-slate-300 font-mono">
-              {dbLevel}dB ({getNoiseLabel(dbLevel)})
-            </span>
-          </div>
-
-          {/* 自動更新一時停止/再開ボタン */}
-          <button
-            onClick={togglePause}
-            className={`flex items-center gap-1.5 transition-all font-bold border px-3 py-1.5 rounded-lg text-xs sm:text-sm select-none cursor-pointer ${
-              isPaused 
-                ? "bg-rose-600/30 border-rose-500 hover:bg-rose-600/50 text-rose-200 animate-pulse" 
-                : "bg-emerald-600/20 border-emerald-500/50 hover:bg-emerald-600/30 text-emerald-300"
-            }`}
-          >
-            {isPaused ? (
-              <>
-                <Play className="w-3.5 h-3.5" />
-                <span>更新再開</span>
-              </>
-            ) : (
-              <>
-                <Pause className="w-3.5 h-3.5" />
-                <span>更新停止</span>
-              </>
-            )}
-          </button>
-
           {/* 強制一括更新ボタン */}
           <button
             onClick={triggerFullUpdate}
@@ -987,18 +948,12 @@ export default function App() {
         </div>
       </header>
 
-      {/* スマホ用ステータスパネル：郵便番号、住所、周囲の静かさ */}
+      {/* スマホ用ステータスパネル：郵便番号、住所 */}
       <div className="md:hidden w-full bg-slate-950/60 backdrop-blur-md border-b border-white/10 px-4 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-sky-400 shrink-0">📍</span>
           <span className="text-slate-200 truncate font-semibold">
             {data.zipcode ? `〒${data.zipcode} ` : ""}{data.address || "現在地を取得中..."}
-          </span>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0 text-slate-300">
-          <span className={`text-rose-400 shrink-0 ${dbLevel > 40 ? "animate-pulse" : ""}`}>🎙️</span>
-          <span className="font-semibold">
-            周囲の静かさ: <span className="font-mono text-white bg-slate-800/80 px-1.5 py-0.5 rounded border border-white/5">{dbLevel}dB</span> ({getNoiseLabel(dbLevel)})
           </span>
         </div>
       </div>
@@ -1022,7 +977,7 @@ export default function App() {
 
       {/* フッター */}
       <footer className="w-full bg-black/40 border-t border-white/5 py-3 text-center text-[10px] text-slate-500 select-none">
-        旅のお供 ver72 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
+        旅のお供 ver73 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
       </footer>
     </div>
   );

@@ -83,6 +83,23 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       return `速度\n${speedKmh} km/h`;
     },
   },
+  {
+    id: "dbLevel",
+    label: "周囲の静かさ",
+    emoji: "🎙️",
+    borderColorClass: "border-white",
+    render: (data) => {
+      if (data.dbLevel === null || data.dbLevel === undefined) return "-";
+      const db = data.dbLevel;
+      let label = "極めて静か";
+      if (db < 20) label = "極めて静か";
+      else if (db < 40) label = "静か";
+      else if (db < 65) label = "普通";
+      else if (db < 85) label = "騒がしい";
+      else label = "極めて騒がしい";
+      return `${db} dB\n${label}`;
+    },
+  },
 
   // ==========================================
   // ジャンル 4: 目標地距離 (経緯度計算・API不要)

@@ -38,8 +38,8 @@ export function CompanionTile({
 
   // データの最終更新時刻が変わったら一時的に黄色にする（フラッシュ演出）
   useEffect(() => {
-    // 傾きと方角は黄色に光らせない（常時光ることになるため）
-    if (config.id === "tilt" || config.id === "bearing") {
+    // 傾き、方角、周囲の静かさは黄色に光らせない（常時光ることになるため）
+    if (config.id === "tilt" || config.id === "bearing" || config.id === "dbLevel") {
       return;
     }
     
@@ -50,29 +50,45 @@ export function CompanionTile({
       setIsFlashing(true);
       const timer = setTimeout(() => {
         setIsFlashing(false);
-      }, 1500); // 1.5秒間黄色
+      }, 750); // 0.75秒間黄色（半分の時間）
       return () => clearTimeout(timer);
     }
   }, [lastUpdatedTime, valueString, config.id]);
 
   // 文字数に応じてフォントサイズを決定。枠内に収まるできるだけ大きいサイズにし、統一感を出す
-  // ユーザー要望：全パネルの値、文字をできるだけ大きく
+  // ユーザー要望：全パネルの値、文字をできるだけ大きく、見切れ「…」禁止
   const getFontSizeClass = (text: string) => {
-    if (!text) return "text-[16px] sm:text-[18px] md:text-[20px] font-black";
+    if (!text) return "text-[18px] sm:text-[20px] md:text-[22px] font-black";
     const len = text.length;
-    // ほとんどの2行表記や短い数値（14文字以下）に最高に大きくて見やすいインパクト
-    if (len <= 14) {
-      return "text-[16px] sm:text-[18px] md:text-[20px] font-black leading-tight";
+    if (len <= 10) {
+      return "text-[18px] sm:text-[20px] md:text-[22px] font-black leading-tight";
     }
-    // 少し長めの文字列（15〜24文字）
-    if (len <= 24) {
-      return "text-[13px] sm:text-[15px] md:text-[17px] font-bold leading-snug";
+    if (len <= 16) {
+      return "text-[15px] sm:text-[17px] md:text-[19px] font-black leading-tight";
     }
-    // 非常に長い住所や名称
-    return "text-[11px] sm:text-[12px] md:text-[13px] font-bold leading-normal";
+    if (len <= 26) {
+      return "text-[12px] sm:text-[14px] md:text-[16px] font-bold leading-snug";
+    }
+    if (len <= 36) {
+      return "text-[10px] sm:text-[11px] md:text-[12px] font-bold leading-normal";
+    }
+    return "text-[8px] sm:text-[9px] md:text-[11px] font-bold leading-normal";
   };
 
-  const fontSizeClass = getFontSizeClass(valueString);
+  let fontSizeClass = getFontSizeClass(valueString);
+  if (config.id === "dbLevel") {
+    if (fontSizeClass.includes("text-[18px]")) {
+      fontSizeClass = "text-[17px] sm:text-[19px] md:text-[21px] font-black leading-tight";
+    } else if (fontSizeClass.includes("text-[15px]")) {
+      fontSizeClass = "text-[14px] sm:text-[16px] md:text-[18px] font-black leading-tight";
+    } else if (fontSizeClass.includes("text-[12px]")) {
+      fontSizeClass = "text-[11px] sm:text-[13px] md:text-[15px] font-bold leading-snug";
+    } else if (fontSizeClass.includes("text-[10px]")) {
+      fontSizeClass = "text-[9px] sm:text-[10px] md:text-[11px] font-bold leading-normal";
+    } else {
+      fontSizeClass = "text-[7.5px] sm:text-[8px] md:text-[10px] font-bold leading-normal";
+    }
+  }
 
   // 枠のグラデーション色を取得
   const getGradientColors = (borderColor: string) => {
@@ -123,7 +139,7 @@ export function CompanionTile({
         } transition-all duration-300`}
       >
         {/* 項目名（小さく表示） */}
-        <div className="text-[11px] text-gray-300 font-normal opacity-85 leading-tight mb-0.5 truncate">
+        <div className="text-[10px] sm:text-[11px] text-gray-300 font-normal opacity-85 leading-tight mb-0.5 whitespace-normal break-all">
           {config.emoji} {config.label}
         </div>
 

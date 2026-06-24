@@ -71,6 +71,7 @@ export interface CompanionData {
   attraction1: { name: string; distance: number; bearing: number } | null;
   attraction2: { name: string; distance: number; bearing: number } | null;
   intersection: { name: string; distance: number; bearing: number } | null;
+  dbLevel: number | null;
 }
 
 export type TileId = keyof CompanionData | string;
