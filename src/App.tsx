@@ -419,7 +419,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <h1 className="text-lg sm:text-xl font-black text-white tracking-wider flex items-center gap-1.5">
-              旅のお供 <span className="text-xs font-normal opacity-70">ver64</span>
+              旅のお供 <span className="text-xs font-normal opacity-70">ver65</span>
             </h1>
             <span className="hidden md:inline-block text-xs text-slate-400 border-l border-white/20 pl-2 max-w-[200px] truncate">
               📍 {data.address || "現在地を取得中..."}
@@ -467,7 +467,7 @@ export default function App() {
 
       {/* フッター */}
       <footer className="w-full bg-black/40 border-t border-white/5 py-3 text-center text-[10px] text-slate-500 select-none">
-        旅のお供 ver64 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
+        旅のお供 ver65 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
       </footer>
     </div>
   );

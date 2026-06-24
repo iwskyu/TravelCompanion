@@ -193,7 +193,24 @@ export async function fetchAirQualityAndPollen(
   }
 }
 
-// 海水温 (Open-Meteo Mari// ダミーを使わない周辺POI用の未検出フォールバックデータ生成器
+// 海水温 (Open-Meteo Marine API)
+export async function fetchSeaTemperature(
+  lat: number,
+  lon: number
+): Promise<number | null> {
+  try {
+    const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&current=sea_surface_temperature`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Marine API failed");
+    const json = await res.json();
+    return json.current?.sea_surface_temperature !== undefined ? json.current.sea_surface_temperature : null;
+  } catch (e) {
+    console.error("Marine API error (likely inland)", e);
+    return null;
+  }
+}
+
+// ダミーを使わない周辺POI用の未検出フォールバックデータ生成器
 export function generateFallbackPOI(lat: number, lon: number): Partial<CompanionData> {
   const seaBases = [
     { name: "太平洋(相模湾)", lat: 35.2, lon: 139.3 },
