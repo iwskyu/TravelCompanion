@@ -1,0 +1,11 @@
+{
+  "name": "旅のお供 ver64",
+  "description": "旅先で役立つ52の情報をリアルタイムに網羅する、あなただけの最強の旅のお供ツール。",
+  "requestFramePermissions": [
+    "geolocation",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
