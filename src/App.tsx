@@ -96,6 +96,7 @@ export default function App() {
   // マイク周りのRef
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const latestDb = useRef<number>(0);
 
   // 1. 初回起動（オーバーレイからコールバック）
   const handleStart = (
@@ -115,12 +116,6 @@ export default function App() {
     if (stream) {
       initAudioAnalyser(stream);
     }
-
-    // 初回のGPS監視開始
-    initGpsWatcher();
-
-    // デバイス傾き・コンパス監視開始
-    initSensorWatcher();
 
     // 初回一括更新
     triggerFullUpdate();
@@ -152,59 +147,13 @@ export default function App() {
         const average = sum / dataArray.length;
         // デシベル簡易計算 (0〜100dBの範囲にスケーリング)
         const db = Math.round((average / 255) * 100);
-        setDbLevel(db);
+        latestDb.current = db;
         requestAnimationFrame(updateVolume);
       };
       updateVolume();
     } catch (e) {
       console.warn("Failed to init audio analyser", e);
     }
-  };
-
-  // GPSのリアルタイムトラッキング
-  const initGpsWatcher = () => {
-    if ("geolocation" in navigator) {
-      navigator.geolocation.watchPosition(
-        (position) => {
-          latestGps.current = {
-            accuracy: position.coords.accuracy,
-            speed: position.coords.speed,
-            elevation: position.coords.altitude,
-          };
-          // 最初の位置情報を元に経緯度を更新
-          currentCoords.current = {
-            lat: position.coords.latitude,
-            lon: position.coords.longitude,
-          };
-        },
-        (err) => {
-          console.warn("watchPosition error", err);
-        },
-        { enableHighAccuracy: true }
-      );
-    }
-  };
-
-  // デバイス傾きとコンパスのトラッキング
-  const initSensorWatcher = () => {
-    const handleOrientation = (e: DeviceOrientationEvent) => {
-      // 傾き (ピッチ: beta, ロール: gamma)
-      const pitch = e.beta !== null ? Math.round(e.beta) : 0;
-      const roll = e.gamma !== null ? Math.round(e.gamma) : 0;
-      latestTilt.current = { pitch, roll };
-
-      // 方角 (webkitCompassHeadingがある場合はそれがiOSの絶対方位、そうでなければalpha)
-      // @ts-ignore
-      let heading = e.webkitCompassHeading;
-      if (heading === undefined || heading === null) {
-        heading = e.alpha !== null ? 360 - e.alpha : 0;
-      }
-      const rawHeading = Math.round(heading);
-      latestHeading.current = rawHeading;
-      setDeviceHeading(rawHeading);
-    };
-
-    window.addEventListener("deviceorientation", handleOrientation, true);
   };
 
   // 騒音レベルを評価する日本語文字列を取得
@@ -313,18 +262,60 @@ export default function App() {
     return directions[index];
   };
 
-  // 3. 自動タイマーの設定
+  // 3. 自動タイマーの設定とセンサー監視
   useEffect(() => {
     if (!started) return;
 
+    // --- GPS監視開始 ---
+    let watchId: number | null = null;
+    if ("geolocation" in navigator) {
+      watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          latestGps.current = {
+            accuracy: position.coords.accuracy,
+            speed: position.coords.speed,
+            elevation: position.coords.altitude,
+          };
+          currentCoords.current = {
+            lat: position.coords.latitude,
+            lon: position.coords.longitude,
+          };
+        },
+        (err) => {
+          console.warn("watchPosition error", err);
+        },
+        { enableHighAccuracy: true }
+      );
+    }
+
+    // --- デバイス傾きとコンパスのトラッキング（Ref更新のみで再描画は起こさない） ---
+    const handleOrientation = (e: DeviceOrientationEvent) => {
+      const pitch = e.beta !== null ? Math.round(e.beta) : 0;
+      const roll = e.gamma !== null ? Math.round(e.gamma) : 0;
+      latestTilt.current = { pitch, roll };
+
+      // @ts-ignore
+      let heading = e.webkitCompassHeading;
+      if (heading === undefined || heading === null) {
+        heading = e.alpha !== null ? 360 - e.alpha : 0;
+      }
+      latestHeading.current = Math.round(heading);
+    };
+    window.addEventListener("deviceorientation", handleOrientation, true);
+
     // --- 1秒毎更新 ---
-    // 📐傾き, 🧭方角
+    // 📐傾き, 🧭方角, マイクdBをまとめて1秒毎に1回だけ一括ステート描画（スロットリング）
     const interval1s = setInterval(() => {
       const nowStamp = Date.now();
+      const heading = latestHeading.current;
+      
+      setDeviceHeading(heading);
+      setDbLevel(latestDb.current);
+
       setData((prev) => ({
         ...prev,
         tilt: { ...latestTilt.current },
-        bearing: { angle: latestHeading.current, direction: getDirectionString(latestHeading.current) },
+        bearing: { angle: heading, direction: getDirectionString(heading) },
       }));
       setLastUpdated((prev) => ({
         ...prev,
@@ -391,6 +382,10 @@ export default function App() {
     }, 60 * 60 * 1000);
 
     return () => {
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+      window.removeEventListener("deviceorientation", handleOrientation, true);
       clearInterval(interval1s);
       clearInterval(interval5s);
       clearInterval(interval3m);
@@ -419,7 +414,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <h1 className="text-lg sm:text-xl font-black text-white tracking-wider flex items-center gap-1.5">
-              旅のお供 <span className="text-xs font-normal opacity-70">ver65</span>
+              旅のお供 <span className="text-xs font-normal opacity-70">ver66</span>
             </h1>
             <span className="hidden md:inline-block text-xs text-slate-400 border-l border-white/20 pl-2 max-w-[200px] truncate">
               📍 {data.address || "現在地を取得中..."}
@@ -467,7 +462,7 @@ export default function App() {
 
       {/* フッター */}
       <footer className="w-full bg-black/40 border-t border-white/5 py-3 text-center text-[10px] text-slate-500 select-none">
-        旅のお供 ver65 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
+        旅のお供 ver66 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
       </footer>
     </div>
   );

@@ -33,7 +33,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     render: (data) => {
       if (!data.tilt) return "-";
       const { pitch, roll } = data.tilt;
-      return `P:${pitch}°\nR:${roll}°`;
+      return `前後:${pitch}°\n左右:${roll}°`;
     },
   },
   {
@@ -77,7 +77,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-blue", // 青
     render: (data) => {
       if (data.elevation === null) return "-";
-      return `${data.elevation}m`;
+      return `${Math.round(data.elevation)}m`;
     },
   },
 
@@ -584,7 +584,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-blue",
     render: (data) => {
       if (!data.mountain) return "-";
-      return `${data.mountain.name}\n標高${data.mountain.elevation}m ${formatDistance(data.mountain.distance)}`;
+      return `${data.mountain.name}\n標高${Math.round(data.mountain.elevation)}m ${formatDistance(data.mountain.distance)}`;
     },
   },
 
