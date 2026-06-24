@@ -317,9 +317,9 @@ export default function App() {
   useEffect(() => {
     if (!started) return;
 
-    // --- 2秒毎更新 ---
+    // --- 1秒毎更新 ---
     // 📐傾き, 🧭方角
-    const interval2s = setInterval(() => {
+    const interval1s = setInterval(() => {
       const nowStamp = Date.now();
       setData((prev) => ({
         ...prev,
@@ -331,7 +331,7 @@ export default function App() {
         tilt: nowStamp,
         bearing: nowStamp,
       }));
-    }, 2000);
+    }, 1000);
 
     // --- 5秒毎更新 ---
     // 📡GPS精度, 🚗移動速度, ⛰️標高
@@ -391,7 +391,7 @@ export default function App() {
     }, 60 * 60 * 1000);
 
     return () => {
-      clearInterval(interval2s);
+      clearInterval(interval1s);
       clearInterval(interval5s);
       clearInterval(interval3m);
       clearInterval(interval10m);

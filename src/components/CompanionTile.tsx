@@ -51,16 +51,16 @@ export function CompanionTile({
   const fontSizeClass = getFontSizeClass(valueString);
 
   // 枠線と背景色の設定
-  // isFlashingがtrueのときは黄色の枠線・背景になる (Elegant Dark の .tile-updated)
+  // isFlashingがtrueのときは黄色の枠線・背景になり、少し拡大して光彩シャドウを放つ
   const borderClass = isFlashing
-    ? "tile-updated bg-yellow-500/10"
+    ? "tile-updated bg-yellow-400/25 scale-[1.03] z-10 shadow-[0_0_20px_rgba(250,204,21,0.5)]"
     : `${config.borderColorClass} bg-black/20`;
 
   return (
     <motion.div
       id={`tile-${config.id}`}
       layout
-      className={`relative flex flex-col justify-center px-2 py-0.5 border border-solid transition-all duration-500 ease-out h-[72px] sm:h-20 md:h-24 overflow-hidden select-none ${borderClass}`}
+      className={`relative flex flex-col justify-center px-2 py-0.5 border border-solid transition-all duration-300 ease-out h-[72px] sm:h-20 md:h-24 overflow-hidden select-none ${borderClass}`}
     >
       {/* 項目名（小さく表示） */}
       <div className="text-[10px] text-gray-300 font-normal opacity-85 leading-tight mb-0.5 truncate">
