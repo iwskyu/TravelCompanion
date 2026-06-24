@@ -6,6 +6,45 @@
 import { CompanionData } from "../types";
 import { calculateDistance, calculateBearing, getCardinalDirection, findNearestCapital, getMoonAgeAndState, getSolarPosition, getTideTimes, DESTINATIONS } from "./geo";
 
+// 12時間以上の連続使用に耐えるための超堅牢なキャッシュ＆位置変動ガード層
+interface CacheStore {
+  addressZip: { lat: number; lon: number; timestamp: number; data: { address: string; zipcode: string } } | null;
+  meteo: { lat: number; lon: number; timestamp: number; data: any } | null;
+  airQuality: { lat: number; lon: number; timestamp: number; data: { pollenText: string; pm25: number | null } } | null;
+  seaTemp: { lat: number; lon: number; timestamp: number; data: number | null } | null;
+  poiData: { lat: number; lon: number; timestamp: number; data: any } | null;
+}
+
+const cache: CacheStore = {
+  addressZip: null,
+  meteo: null,
+  airQuality: null,
+  seaTemp: null,
+  poiData: null,
+};
+
+// 重複リクエストの排除 (Deduplication) 用のマップ
+const pendingPromises: {
+  addressZip?: Promise<{ address: string; zipcode: string }>;
+  meteo?: Promise<any>;
+  airQuality?: Promise<{ pollenText: string; pm25: number | null }>;
+  seaTemp?: Promise<number | null>;
+  poiData?: Promise<any>;
+} = {};
+
+// 2点間の位置差（緯度・経度）が閾値以下かどうかを判定
+function isWithinMovementThreshold(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+  thresholdDegrees: number
+): boolean {
+  const dLat = Math.abs(lat1 - lat2);
+  const dLon = Math.abs(lon1 - lon2);
+  return dLat <= thresholdDegrees && dLon <= thresholdDegrees;
+}
+
 // WMO天気コードを絵文字に変換
 export function getWeatherEmojiAndName(code: number): { emoji: string; name: string } {
   // WMO Weather interpretation codes (WW)
@@ -25,34 +64,68 @@ export async function fetchAddressAndZip(
   lat: number,
   lon: number
 ): Promise<{ address: string; zipcode: string }> {
-  try {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept-language=ja`;
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "TravelCompanionApp/64.0 (iwskyu@gmail.com)",
-      },
-    });
-    if (!res.ok) throw new Error("Nominatim failed");
-    const json = await res.json();
-    const addr = json.address;
+  const now = Date.now();
+  if (cache.addressZip) {
+    const timeDiff = now - cache.addressZip.timestamp;
+    const isNearbyStrict = isWithinMovementThreshold(lat, lon, cache.addressZip.lat, cache.addressZip.lon, 0.0001);
+    const isNearbyLoose = isWithinMovementThreshold(lat, lon, cache.addressZip.lat, cache.addressZip.lon, 0.0005);
     
-    // 住所の組み立て
-    const prefecture = addr.province || addr.prefecture || addr.state || "";
-    const city = addr.city || addr.town || addr.village || addr.suburb || addr.city_district || "";
-    const road = addr.road || addr.suburb || addr.neighbourhood || "";
-    const houseNumber = addr.house_number || "";
-    
-    let addressStr = `${prefecture}${city}${road}${houseNumber}`;
-    if (!addressStr) {
-      addressStr = json.display_name || "-";
+    // 5分未満かつ約11m以内、または、約55m以内（ほとんど動いていない）ならキャッシュを利用
+    if ((timeDiff < 5 * 60 * 1000 && isNearbyStrict) || isNearbyLoose) {
+      if (isNearbyLoose) {
+        cache.addressZip.timestamp = now; // 寿命を延長
+      }
+      return cache.addressZip.data;
     }
-
-    const zipcode = addr.postcode || "-";
-    return { address: addressStr, zipcode };
-  } catch (e) {
-    console.error("Nominatim error", e);
-    return { address: "-", zipcode: "-" };
   }
+
+  // 同一APIリクエストの重複排除 (Deduplication)
+  if (pendingPromises.addressZip) {
+    return pendingPromises.addressZip;
+  }
+
+  const runFetch = async () => {
+    try {
+      const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept-language=ja`;
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": "TravelCompanionApp/64.0 (iwskyu@gmail.com)",
+        },
+      });
+      if (!res.ok) throw new Error("Nominatim failed");
+      const json = await res.json();
+      const addr = json.address;
+      
+      // 住所の組み立て
+      const prefecture = addr.province || addr.prefecture || addr.state || "";
+      const city = addr.city || addr.town || addr.village || addr.suburb || addr.city_district || "";
+      const road = addr.road || addr.suburb || addr.neighbourhood || "";
+      const houseNumber = addr.house_number || "";
+      
+      let addressStr = `${prefecture}${city}${road}${houseNumber}`;
+      if (!addressStr) {
+        addressStr = json.display_name || "-";
+      }
+
+      const zipcode = addr.postcode || "-";
+      const result = { address: addressStr, zipcode };
+      
+      // キャッシュに保存
+      cache.addressZip = { lat, lon, timestamp: Date.now(), data: result };
+      return result;
+    } catch (e) {
+      console.error("Nominatim error", e);
+      if (cache.addressZip) {
+        return cache.addressZip.data;
+      }
+      return { address: "-", zipcode: "-" };
+    } finally {
+      delete pendingPromises.addressZip;
+    }
+  };
+
+  pendingPromises.addressZip = runFetch();
+  return pendingPromises.addressZip;
 }
 
 // 天気・気象全般 (Open-Meteo)
@@ -70,91 +143,122 @@ export async function fetchWeatherAndMeteorology(
   humidity: number | null;
   elevation: number | null;
 }> {
-  try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m,wind_direction_10m&hourly=precipitation_probability,uv_index&daily=sunrise,sunset&elevation=nan&timezone=auto`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error("Open-Meteo failed");
-    const json = await res.json();
+  const now = Date.now();
+  if (cache.meteo) {
+    const timeDiff = now - cache.meteo.timestamp;
+    const isNearbyStrict = isWithinMovementThreshold(lat, lon, cache.meteo.lat, cache.meteo.lon, 0.001);
+    const isNearbyLoose = isWithinMovementThreshold(lat, lon, cache.meteo.lat, cache.meteo.lon, 0.005);
 
-    const current = json.current;
-    const hourly = json.hourly;
-    const daily = json.daily;
+    // 15分未満かつ約110m以内、または、約550m以内（ほぼ動いていない）ならキャッシュを利用
+    if ((timeDiff < 15 * 60 * 1000 && isNearbyStrict) || isNearbyLoose) {
+      if (isNearbyLoose) {
+        cache.meteo.timestamp = now; // 寿命延長
+      }
+      return cache.meteo.data;
+    }
+  }
 
-    // 天気と気温
-    const weather = current
-      ? { code: current.weather_code, temp: current.temperature_2m }
-      : null;
+  if (pendingPromises.meteo) {
+    return pendingPromises.meteo;
+  }
 
-    // 降水量・降水確率
-    const probability = hourly?.precipitation_probability ? hourly.precipitation_probability[0] : null;
-    const amount = current?.precipitation !== undefined ? current.precipitation : null;
-    const precipitation = { probability, amount };
+  const runFetch = async () => {
+    try {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m,wind_direction_10m&hourly=precipitation_probability,uv_index&daily=sunrise,sunset&elevation=nan&timezone=auto`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Open-Meteo failed");
+      const json = await res.json();
 
-    // 雨雲接近
-    // 今後15時間以内で降水確率が30%を超える一番早い時間を算出
-    let rainCloudApproach = "接近なし";
-    if (hourly?.precipitation_probability) {
-      for (let i = 0; i < 15; i++) {
-        const prob = hourly.precipitation_probability[i];
-        if (prob >= 30) {
-          rainCloudApproach = `${i}時間後接近`;
-          break;
+      const current = json.current;
+      const hourly = json.hourly;
+      const daily = json.daily;
+
+      // 天気と気温
+      const weather = current
+        ? { code: current.weather_code, temp: current.temperature_2m }
+        : null;
+
+      // 降水量・降水確率
+      const probability = hourly?.precipitation_probability ? hourly.precipitation_probability[0] : null;
+      const amount = current?.precipitation !== undefined ? current.precipitation : null;
+      const precipitation = { probability, amount };
+
+      // 雨雲接近
+      let rainCloudApproach = "接近なし";
+      if (hourly?.precipitation_probability) {
+        for (let i = 0; i < 15; i++) {
+          const prob = hourly.precipitation_probability[i];
+          if (prob >= 30) {
+            rainCloudApproach = `${i}時間後接近`;
+            break;
+          }
         }
       }
+
+      // 紫外線 (UV index)
+      const uvIdx = hourly?.uv_index ? hourly.uv_index[0] : 0;
+      let uvLevel = "弱い";
+      if (uvIdx >= 3 && uvIdx < 6) uvLevel = "やや強い";
+      else if (uvIdx >= 6 && uvIdx < 8) uvLevel = "強い";
+      else if (uvIdx >= 8 && uvIdx < 11) uvLevel = "非常に強い";
+      else if (uvIdx >= 11) uvLevel = "極端に強い";
+      const uvIndex = { index: uvIdx, level: uvLevel };
+
+      // 日の出・日没
+      const sunriseStr = daily?.sunrise ? daily.sunrise[0].split("T")[1] : "-";
+      const sunsetStr = daily?.sunset ? daily.sunset[0].split("T")[1] : "-";
+      const sunrise = { time: sunriseStr, bearing: 75 };
+      const sunset = { time: sunsetStr, bearing: 285 };
+
+      // 風
+      const windSpeedMps = current ? Math.round((current.wind_speed_10m / 3.6) * 10) / 10 : 0;
+      const windBearing = current ? current.wind_direction_10m : 0;
+      const windDir = getCardinalDirection(windBearing);
+      const wind = { speed: windSpeedMps, bearing: windBearing, direction: windDir };
+
+      // 湿度
+      const humidity = current ? current.relative_humidity_2m : null;
+
+      // 標高
+      const elevation = json.elevation !== undefined && json.elevation !== null ? Math.round(json.elevation) : null;
+
+      const result = {
+        weather,
+        precipitation,
+        rainCloudApproach,
+        uvIndex,
+        sunrise,
+        sunset,
+        wind,
+        humidity,
+        elevation,
+      };
+
+      cache.meteo = { lat, lon, timestamp: Date.now(), data: result };
+      return result;
+    } catch (e) {
+      console.error("Open-Meteo Error", e);
+      if (cache.meteo) {
+        return cache.meteo.data;
+      }
+      return {
+        weather: null,
+        precipitation: null,
+        rainCloudApproach: "-",
+        uvIndex: null,
+        sunrise: null,
+        sunset: null,
+        wind: null,
+        humidity: null,
+        elevation: null,
+      };
+    } finally {
+      delete pendingPromises.meteo;
     }
+  };
 
-    // 紫外線 (UV index)
-    const uvIdx = hourly?.uv_index ? hourly.uv_index[0] : 0;
-    let uvLevel = "弱い";
-    if (uvIdx >= 3 && uvIdx < 6) uvLevel = "やや強い";
-    else if (uvIdx >= 6 && uvIdx < 8) uvLevel = "強い";
-    else if (uvIdx >= 8 && uvIdx < 11) uvLevel = "非常に強い";
-    else if (uvIdx >= 11) uvLevel = "極端に強い";
-    const uvIndex = { index: uvIdx, level: uvLevel };
-
-    // 日の出・日没
-    const sunriseStr = daily?.sunrise ? daily.sunrise[0].split("T")[1] : "-";
-    const sunsetStr = daily?.sunset ? daily.sunset[0].split("T")[1] : "-";
-    const sunrise = { time: sunriseStr, bearing: 75 }; // 日の出はほぼ東
-    const sunset = { time: sunsetStr, bearing: 285 }; // 日没はほぼ西
-
-    // 風
-    const windSpeedMps = current ? Math.round((current.wind_speed_10m / 3.6) * 10) / 10 : 0; // km/h to m/s
-    const windBearing = current ? current.wind_direction_10m : 0;
-    const windDir = getCardinalDirection(windBearing);
-    const wind = { speed: windSpeedMps, bearing: windBearing, direction: windDir };
-
-    // 湿度
-    const humidity = current ? current.relative_humidity_2m : null;
-
-    // 標高
-    const elevation = json.elevation !== undefined && json.elevation !== null ? Math.round(json.elevation) : null;
-
-    return {
-      weather,
-      precipitation,
-      rainCloudApproach,
-      uvIndex,
-      sunrise,
-      sunset,
-      wind,
-      humidity,
-      elevation,
-    };
-  } catch (e) {
-    console.error("Open-Meteo Error", e);
-    return {
-      weather: null,
-      precipitation: null,
-      rainCloudApproach: "-",
-      uvIndex: null,
-      sunrise: null,
-      sunset: null,
-      wind: null,
-      humidity: null,
-      elevation: null,
-    };
-  }
+  pendingPromises.meteo = runFetch();
+  return pendingPromises.meteo;
 }
 
 // 大気汚染・花粉 (Open-Meteo Air Quality API)
@@ -162,35 +266,64 @@ export async function fetchAirQualityAndPollen(
   lat: number,
   lon: number
 ): Promise<{ pollenText: string; pm25: number | null }> {
-  try {
-    const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,alder_pollen,birch_pollen,grass_pollen,mugwort_pollen,ragweed_pollen`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error("Air Quality API failed");
-    const json = await res.json();
-    const current = json.current;
+  const now = Date.now();
+  if (cache.airQuality) {
+    const timeDiff = now - cache.airQuality.timestamp;
+    const isNearbyStrict = isWithinMovementThreshold(lat, lon, cache.airQuality.lat, cache.airQuality.lon, 0.005);
+    const isNearbyLoose = isWithinMovementThreshold(lat, lon, cache.airQuality.lat, cache.airQuality.lon, 0.02);
 
-    const pm25 = current?.pm2_5 !== undefined ? current.pm2_5 : null;
-
-    // 日本の花粉は杉、ヒノキが主。ヨーロッパ・グローバルAPI（Open-Meteo）はハンノキ（alder）、カバノキ（birch）、イネ科（grass）、ヨモギ（mugwort）、ブタクサ（ragweed）を検出。
-    // これらを合計しておよその大気汚染・花粉状態を算出
-    const totalPollen = (
-      (current?.alder_pollen || 0) +
-      (current?.birch_pollen || 0) +
-      (current?.grass_pollen || 0) +
-      (current?.mugwort_pollen || 0) +
-      (current?.ragweed_pollen || 0)
-    );
-
-    let pollenText = "少ない";
-    if (totalPollen > 100) pollenText = "非常に多い";
-    else if (totalPollen > 50) pollenText = "多い";
-    else if (totalPollen > 15) pollenText = "やや多い";
-
-    return { pollenText, pm25: totalPollen };
-  } catch (e) {
-    console.error("Air Quality Error", e);
-    return { pollenText: "-", pm25: null };
+    // 30分未満かつ約550m以内、または、約2.2km以内（ほぼ動いていない）ならキャッシュを利用
+    if ((timeDiff < 30 * 60 * 1000 && isNearbyStrict) || isNearbyLoose) {
+      if (isNearbyLoose) {
+        cache.airQuality.timestamp = now; // 寿命延長
+      }
+      return cache.airQuality.data;
+    }
   }
+
+  if (pendingPromises.airQuality) {
+    return pendingPromises.airQuality;
+  }
+
+  const runFetch = async () => {
+    try {
+      const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,alder_pollen,birch_pollen,grass_pollen,mugwort_pollen,ragweed_pollen`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Air Quality API failed");
+      const json = await res.json();
+      const current = json.current;
+
+      const pm25 = current?.pm2_5 !== undefined ? current.pm2_5 : null;
+
+      const totalPollen = (
+        (current?.alder_pollen || 0) +
+        (current?.birch_pollen || 0) +
+        (current?.grass_pollen || 0) +
+        (current?.mugwort_pollen || 0) +
+        (current?.ragweed_pollen || 0)
+      );
+
+      let pollenText = "少ない";
+      if (totalPollen > 100) pollenText = "非常に多い";
+      else if (totalPollen > 50) pollenText = "多い";
+      else if (totalPollen > 15) pollenText = "やや多い";
+
+      const result = { pollenText, pm25: totalPollen };
+      cache.airQuality = { lat, lon, timestamp: Date.now(), data: result };
+      return result;
+    } catch (e) {
+      console.error("Air Quality Error", e);
+      if (cache.airQuality) {
+        return cache.airQuality.data;
+      }
+      return { pollenText: "-", pm25: null };
+    } finally {
+      delete pendingPromises.airQuality;
+    }
+  };
+
+  pendingPromises.airQuality = runFetch();
+  return pendingPromises.airQuality;
 }
 
 // 海水温 (Open-Meteo Marine API)
@@ -198,16 +331,48 @@ export async function fetchSeaTemperature(
   lat: number,
   lon: number
 ): Promise<number | null> {
-  try {
-    const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&current=sea_surface_temperature`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error("Marine API failed");
-    const json = await res.json();
-    return json.current?.sea_surface_temperature !== undefined ? json.current.sea_surface_temperature : null;
-  } catch (e) {
-    console.error("Marine API error (likely inland)", e);
-    return null;
+  const now = Date.now();
+  if (cache.seaTemp) {
+    const timeDiff = now - cache.seaTemp.timestamp;
+    const isNearbyStrict = isWithinMovementThreshold(lat, lon, cache.seaTemp.lat, cache.seaTemp.lon, 0.01);
+    const isNearbyLoose = isWithinMovementThreshold(lat, lon, cache.seaTemp.lat, cache.seaTemp.lon, 0.05);
+
+    // 60分未満かつ約1.1km以内、または、約5.5km以内ならキャッシュを利用
+    if ((timeDiff < 60 * 60 * 1000 && isNearbyStrict) || isNearbyLoose) {
+      if (isNearbyLoose) {
+        cache.seaTemp.timestamp = now; // 寿命延長
+      }
+      return cache.seaTemp.data;
+    }
   }
+
+  if (pendingPromises.seaTemp) {
+    return pendingPromises.seaTemp;
+  }
+
+  const runFetch = async () => {
+    try {
+      const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&current=sea_surface_temperature`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Marine API failed");
+      const json = await res.json();
+      const result = json.current?.sea_surface_temperature !== undefined ? json.current.sea_surface_temperature : null;
+      
+      cache.seaTemp = { lat, lon, timestamp: Date.now(), data: result };
+      return result;
+    } catch (e) {
+      console.error("Marine API error (likely inland)", e);
+      if (cache.seaTemp) {
+        return cache.seaTemp.data;
+      }
+      return null;
+    } finally {
+      delete pendingPromises.seaTemp;
+    }
+  };
+
+  pendingPromises.seaTemp = runFetch();
+  return pendingPromises.seaTemp;
 }
 
 // ダミーを使わない周辺POI用の未検出フォールバックデータ生成器
@@ -263,8 +428,52 @@ export function generateFallbackPOI(lat: number, lon: number): Partial<Companion
   };
 }
 
-// Overpass API による周辺POI取得 (軽量化したクエリと10秒の十分なタイムアウトにより確実なリアルデータを取得)
+// Overpass API による周辺POI取得 (12時間連続使用のための超堅牢キャッシュ＆デデプリプロキシ)
 export async function fetchPOIFromOverpass(
+  lat: number,
+  lon: number
+): Promise<Partial<CompanionData>> {
+  const now = Date.now();
+  if (cache.poiData) {
+    const timeDiff = now - cache.poiData.timestamp;
+    const isNearbyStrict = isWithinMovementThreshold(lat, lon, cache.poiData.lat, cache.poiData.lon, 0.0005);
+    const isNearbyLoose = isWithinMovementThreshold(lat, lon, cache.poiData.lat, cache.poiData.lon, 0.001);
+
+    // 15分未満かつ約55m以内、または、約110m以内（ほぼ動いていない）ならキャッシュを即座に返す
+    if ((timeDiff < 15 * 60 * 1000 && isNearbyStrict) || isNearbyLoose) {
+      if (isNearbyLoose) {
+        cache.poiData.timestamp = now; // キャッシュ寿命を延長
+      }
+      return cache.poiData.data;
+    }
+  }
+
+  if (pendingPromises.poiData) {
+    return pendingPromises.poiData;
+  }
+
+  const runFetch = async () => {
+    try {
+      const result = await fetchPOIFromOverpassRaw(lat, lon);
+      cache.poiData = { lat, lon, timestamp: Date.now(), data: result };
+      return result;
+    } catch (e) {
+      console.warn("Overpass proxy fetch error", e);
+      if (cache.poiData) {
+        return cache.poiData.data;
+      }
+      return generateFallbackPOI(lat, lon);
+    } finally {
+      delete pendingPromises.poiData;
+    }
+  };
+
+  pendingPromises.poiData = runFetch();
+  return pendingPromises.poiData;
+}
+
+// Overpass API による周辺POI取得 (軽量化したクエリと10秒の十分なタイムアウトにより確実なリアルデータを取得)
+async function fetchPOIFromOverpassRaw(
   lat: number,
   lon: number
 ): Promise<Partial<CompanionData>> {

@@ -174,27 +174,33 @@ export default function App() {
       // APIからすべてのデータをフェッチ（差分APIの統合的なハブ）
       const apiResult = await fetchAllCompanionData(lat, lon);
 
+      const nowStamp = Date.now();
+      const nextUpdated: Partial<Record<TileId, number>> = {};
+
+      for (const tid of tileIds) {
+        if (tid in apiResult) {
+          nextUpdated[tid] = nowStamp;
+        }
+      }
+
+      // 1. dataの更新
       setData((prev) => {
         const next = { ...prev };
-        const nowStamp = Date.now();
-        const nextUpdated = { ...lastUpdated };
-
         for (const tid of tileIds) {
-          // apiResult から該当する値をマッピング。
-          // センサー、GPS、及び静的計算は別にアップデートされるため、API側から来た値のみマッピングする。
           if (tid in apiResult) {
             // @ts-ignore
             next[tid] = apiResult[tid];
-            nextUpdated[tid] = nowStamp;
           }
         }
-
-        setLastUpdated((prevUpdated) => ({
-          ...prevUpdated,
-          ...nextUpdated,
-        }));
         return next;
       });
+
+      // 2. lastUpdatedの更新（独立したステート更新。無限ループ防止）
+      setLastUpdated((prevUpdated) => ({
+        ...prevUpdated,
+        ...nextUpdated,
+      }));
+
     } catch (err) {
       console.error("Failed to update tiles:", tileIds, err);
     }
@@ -233,6 +239,7 @@ export default function App() {
         updatedMap[t.id] = nowStamp;
       });
 
+      // 1. dataの更新
       setData((prev) => ({
         ...prev,
         ...fullData,
@@ -244,7 +251,9 @@ export default function App() {
         elevation: fullData.elevation !== null ? fullData.elevation : latestGps.current.elevation,
       }));
 
+      // 2. lastUpdatedの更新
       setLastUpdated(updatedMap);
+
     } catch (e) {
       console.error("Full update error", e);
     } finally {
@@ -252,14 +261,18 @@ export default function App() {
     }
   };
 
-  // 方角を16方位の日本語に
-  const getDirectionString = (bearing: number): string => {
+  // 方角を16方位の日本語に (堅牢化版)
+  const getDirectionString = (bearing: number | null | undefined): string => {
+    if (bearing === null || bearing === undefined || isNaN(bearing)) {
+      return "-";
+    }
     const directions = [
       "北", "北北東", "北東", "東北東", "東", "東南東", "南東", "南南東",
       "南", "南南西", "南西", "西南西", "西", "西北西", "北西", "北北西"
     ];
     const index = Math.round(bearing / 22.5) % 16;
-    return directions[index];
+    const dir = directions[index];
+    return dir || "-";
   };
 
   // 3. 自動タイマーの設定とセンサー監視
@@ -409,12 +422,12 @@ export default function App() {
       <header className="w-full h-[60px] bg-black/20 border-b border-white/20 sticky top-0 z-40 px-5 flex items-center justify-between shadow-lg shrink-0">
         {/* ロゴと現在地の概要 */}
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center text-base shadow-md">
-            {weatherEmoji}
+          <div className="w-8 h-8 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-md shadow-blue-500/25">
+            <Compass className="w-5 h-5 text-white animate-[spin_15s_linear_infinite]" />
           </div>
           <div className="flex items-center gap-2">
             <h1 className="text-lg sm:text-xl font-black text-white tracking-wider flex items-center gap-1.5">
-              旅のお供 <span className="text-xs font-normal opacity-70">ver66</span>
+              旅のお供 <span className="text-xs font-normal opacity-70">ver68</span>
             </h1>
             <span className="hidden md:inline-block text-xs text-slate-400 border-l border-white/20 pl-2 max-w-[200px] truncate">
               📍 {data.address || "現在地を取得中..."}
@@ -462,7 +475,7 @@ export default function App() {
 
       {/* フッター */}
       <footer className="w-full bg-black/40 border-t border-white/5 py-3 text-center text-[10px] text-slate-500 select-none">
-        旅のお供 ver66 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
+        旅のお供 ver68 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
       </footer>
     </div>
   );

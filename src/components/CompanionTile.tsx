@@ -34,7 +34,13 @@ export function CompanionTile({
     }
   }, [lastUpdatedTime]);
 
-  const valueContent = config.render(data, deviceHeading);
+  let valueContent: React.ReactNode = "-";
+  try {
+    valueContent = config.render(data, deviceHeading);
+  } catch (err) {
+    console.error(`Error rendering tile ${config.id}:`, err);
+    valueContent = "エラー";
+  }
   const valueString = typeof valueContent === "string" ? valueContent : "";
 
   // 文字数に応じてフォントサイズを動的に決定（見切れ・省略の絶対禁止）
