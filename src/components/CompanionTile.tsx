@@ -13,6 +13,7 @@ interface CompanionTileProps {
   data: CompanionData;
   deviceHeading: number | null;
   lastUpdatedTime: number; // 最終更新のタイムスタンプ
+  onClick?: () => void; // タップ/クリックで即情報更新するイベントハンドラー
 }
 
 export function CompanionTile({
@@ -20,6 +21,7 @@ export function CompanionTile({
   data,
   deviceHeading,
   lastUpdatedTime,
+  onClick,
 }: CompanionTileProps) {
   const [isFlashing, setIsFlashing] = useState(false);
 
@@ -54,19 +56,20 @@ export function CompanionTile({
   }, [lastUpdatedTime, valueString, config.id]);
 
   // 文字数に応じてフォントサイズを決定。枠内に収まるできるだけ大きいサイズにし、統一感を出す
+  // ユーザー要望：全パネルの値、文字をできるだけ大きく
   const getFontSizeClass = (text: string) => {
-    if (!text) return "text-[14px] sm:text-[15px] md:text-[17px]";
+    if (!text) return "text-[16px] sm:text-[18px] md:text-[20px] font-black";
     const len = text.length;
-    // ほとんどの2行表記（14文字以下）に最高の統一感を持たせる
+    // ほとんどの2行表記や短い数値（14文字以下）に最高に大きくて見やすいインパクト
     if (len <= 14) {
-      return "text-[14px] sm:text-[15px] md:text-[17px] leading-tight";
+      return "text-[16px] sm:text-[18px] md:text-[20px] font-black leading-tight";
     }
     // 少し長めの文字列（15〜24文字）
     if (len <= 24) {
-      return "text-[12px] sm:text-[13px] md:text-[14px] leading-snug";
+      return "text-[13px] sm:text-[15px] md:text-[17px] font-bold leading-snug";
     }
     // 非常に長い住所や名称
-    return "text-[10px] sm:text-[11px] md:text-[12px] leading-none";
+    return "text-[11px] sm:text-[12px] md:text-[13px] font-bold leading-normal";
   };
 
   const fontSizeClass = getFontSizeClass(valueString);
@@ -108,7 +111,11 @@ export function CompanionTile({
     <motion.div
       id={`tile-${config.id}`}
       layout
-      className={`relative p-[1px] rounded-xl overflow-hidden transition-all duration-300 ease-out h-[72px] sm:h-20 md:h-24 select-none bg-gradient-to-br ${gradientClass}`}
+      whileTap={onClick ? { scale: 0.95 } : undefined}
+      onClick={onClick}
+      className={`relative p-[1px] rounded-xl overflow-hidden transition-all duration-300 ease-out h-[72px] sm:h-20 md:h-24 select-none bg-gradient-to-br ${gradientClass} ${
+        onClick ? "cursor-pointer active:brightness-90 hover:brightness-110 hover:shadow-lg hover:shadow-cyan-500/10" : ""
+      }`}
     >
       <div
         className={`w-full h-full flex flex-col justify-center px-2 py-1 rounded-[11px] overflow-hidden ${

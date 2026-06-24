@@ -649,4 +649,16 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       return `${data.attraction2.name}\n${formatDistance(data.attraction2.distance)} ${arrow}`;
     },
   },
+  {
+    id: "intersection",
+    label: "付近の交差点",
+    emoji: "🚦",
+    borderColorClass: "border-blue",
+    render: (data, heading) => {
+      if (!data.intersection) return "-";
+      if (data.intersection.name === "該当なし(5km)") return "該当なし(5km)";
+      const arrow = getArrow(data.intersection.bearing, heading);
+      return `${data.intersection.name}\n${formatDistance(data.intersection.distance)} ${arrow}`;
+    },
+  },
 ];

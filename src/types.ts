@@ -70,6 +70,7 @@ export interface CompanionData {
   mountain: { name: string; elevation: number; distance: number } | null;
   attraction1: { name: string; distance: number; bearing: number } | null;
   attraction2: { name: string; distance: number; bearing: number } | null;
+  intersection: { name: string; distance: number; bearing: number } | null;
 }
 
 export type TileId = keyof CompanionData | string;

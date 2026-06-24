@@ -84,6 +84,7 @@ const INITIAL_COMPANION_DATA: CompanionData = {
   mountain: null,
   attraction1: null,
   attraction2: null,
+  intersection: null,
 };
 
 export default function App() {
@@ -601,7 +602,7 @@ export default function App() {
           "convenience1", "convenience2", "toilet1", "toilet2", "wifi1", "wifi2",
           "gas1", "gas2", "parking1", "parking2", "roadStation1", "roadStation2",
           "hotel", "guesthouse", "station1", "station2", "bus1", "bus2",
-          "gourmet1", "gourmet2", "mountain", "attraction1", "attraction2"
+          "gourmet1", "gourmet2", "mountain", "attraction1", "attraction2", "intersection"
         ];
         setLastUpdated((prev) => {
           const next = { ...prev };
@@ -627,6 +628,132 @@ export default function App() {
       lastUpdatedCoords.current = { lat, lon };
       lastUpdatedDateStr.current = dateStr;
     });
+  };
+
+  // 特定のパネルをタップ/クリックしたときにそのパネルだけを即時更新する関数
+  const handleTileClick = async (tileId: TileId) => {
+    const nowStamp = Date.now();
+    setLastUpdated((prev) => ({
+      ...prev,
+      [tileId]: nowStamp,
+    }));
+
+    // 位置情報を最新に更新
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          currentCoords.current = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        },
+        null,
+        { enableHighAccuracy: true, timeout: 2000 }
+      );
+    }
+
+    const { lat, lon } = currentCoords.current || { lat: 35.6895, lon: 139.6917 };
+
+    // どのデータを更新するかキーによって分類してフェッチ
+    const weatherKeys = ["weather", "precipitation", "rainCloudApproach", "uvIndex", "wind", "humidity", "elevation"];
+    const poiKeys = [
+      "river", "riverLevel", "roadDensity1", "roadDensity2",
+      "convenience1", "convenience2", "toilet1", "toilet2", "wifi1", "wifi2",
+      "gas1", "gas2", "parking1", "parking2", "roadStation1", "roadStation2",
+      "hotel", "guesthouse", "station1", "station2", "bus1", "bus2",
+      "gourmet1", "gourmet2", "mountain", "attraction1", "attraction2", "intersection"
+    ];
+
+    if (tileId === "address" || tileId === "zipcode") {
+      try {
+        const res = await fetchAddressAndZip(lat, lon);
+        setData((prev) => ({ ...prev, address: res.address, zipcode: res.zipcode }));
+        const updatedStamp = Date.now();
+        setLastUpdated((prev) => ({ ...prev, address: updatedStamp, zipcode: updatedStamp }));
+      } catch (e) {
+        console.error("Single tile update Nominatim error:", e);
+      }
+    } else if (weatherKeys.includes(tileId)) {
+      try {
+        const res = await fetchWeatherAndMeteorology(lat, lon);
+        setData((prev) => ({
+          ...prev,
+          weather: res.weather,
+          precipitation: res.precipitation,
+          rainCloudApproach: res.rainCloudApproach,
+          uvIndex: res.uvIndex,
+          wind: res.wind,
+          humidity: res.humidity,
+          elevation: res.elevation !== null ? res.elevation : prev.elevation,
+        }));
+        const updatedStamp = Date.now();
+        setLastUpdated((prev) => {
+          const next = { ...prev };
+          weatherKeys.forEach(k => { next[k] = updatedStamp; });
+          return next;
+        });
+      } catch (e) {
+        console.error("Single tile update Weather error:", e);
+      }
+    } else if (tileId === "airQuality") {
+      try {
+        const res = await fetchAirQualityAndPollen(lat, lon);
+        setData((prev) => ({ ...prev, airQuality: res }));
+        setLastUpdated((prev) => ({ ...prev, airQuality: Date.now() }));
+      } catch (e) {
+        console.error("Single tile update AirQuality error:", e);
+      }
+    } else if (tileId === "seaTemp") {
+      try {
+        const res = await fetchSeaTemperature(lat, lon);
+        setData((prev) => ({ ...prev, seaTemp: res }));
+        setLastUpdated((prev) => ({ ...prev, seaTemp: Date.now() }));
+      } catch (e) {
+        console.error("Single tile update SeaTemp error:", e);
+      }
+    } else if (poiKeys.includes(tileId)) {
+      try {
+        const res = await fetchPOIFromOverpass(lat, lon);
+        setData((prev) => ({ ...prev, ...res }));
+        const updatedStamp = Date.now();
+        setLastUpdated((prev) => {
+          const next = { ...prev };
+          poiKeys.forEach(k => { next[k] = updatedStamp; });
+          return next;
+        });
+      } catch (e) {
+        console.error("Single tile update POI error:", e);
+      }
+    } else {
+      // センサーやローカル計算系は一瞬で現在データから再生成
+      const now = new Date();
+      const moonAgeData = getMoonAgeAndState(now);
+      const sunPos = getSolarPosition(lat, lon, now);
+      const tides = getTideTimes(now, moonAgeData.age);
+
+      const tokyoDist = calculateDistance(lat, lon, DESTINATIONS.TOKYO_STATION.lat, DESTINATIONS.TOKYO_STATION.lon);
+      const tokyoBear = calculateBearing(lat, lon, DESTINATIONS.TOKYO_STATION.lat, DESTINATIONS.TOKYO_STATION.lon);
+
+      const fujiDist = calculateDistance(lat, lon, DESTINATIONS.MT_FUJI.lat, DESTINATIONS.MT_FUJI.lon);
+      const fujiBear = calculateBearing(lat, lon, DESTINATIONS.MT_FUJI.lat, DESTINATIONS.MT_FUJI.lon);
+
+      const capital = findNearestCapital(lat, lon);
+
+      setData((prev) => ({
+        ...prev,
+        moonAge: moonAgeData,
+        sunPosition: sunPos,
+        highTide: tides.highTides[0] || "-",
+        lowTide: tides.lowTides[0] || "-",
+        tokyoDistance: tokyoDist,
+        tokyoBearing: tokyoBear,
+        fujiDistance: fujiDist,
+        fujiBearing: fujiBear,
+        prefecturalCapital: capital,
+      }));
+
+      setLastUpdated((prev) => ({
+        ...prev,
+        [tileId]: Date.now(),
+      }));
+    }
   };
 
   // 方角を16方位の日本語に (堅牢化版)
@@ -743,7 +870,7 @@ export default function App() {
         "convenience1", "convenience2", "toilet1", "toilet2", "wifi1", "wifi2",
         "gas1", "gas2", "parking1", "parking2", "roadStation1", "roadStation2",
         "hotel", "guesthouse", "station1", "station2", "bus1", "bus2",
-        "gourmet1", "gourmet2", "mountain", "attraction1", "attraction2"
+        "gourmet1", "gourmet2", "mountain", "attraction1", "attraction2", "intersection"
       ];
       updateTileData(list10m);
     }, 10 * 60 * 1000);
@@ -808,7 +935,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <h1 className="text-lg sm:text-xl font-black text-white tracking-wider flex items-center gap-1.5">
-              旅のお供 <span className="text-xs font-normal opacity-70">ver71</span>
+              旅のお供 <span className="text-xs font-normal opacity-70">ver72</span>
             </h1>
             <span className="hidden md:inline-block text-xs text-slate-400 border-l border-white/20 pl-2">
               📍 {data.zipcode ? `〒${data.zipcode} ` : ""}{data.address || "現在地を取得中..."}
@@ -887,6 +1014,7 @@ export default function App() {
               data={data}
               deviceHeading={deviceHeading}
               lastUpdatedTime={lastUpdated[config.id] || 0}
+              onClick={() => handleTileClick(config.id)}
             />
           ))}
         </div>
@@ -894,7 +1022,7 @@ export default function App() {
 
       {/* フッター */}
       <footer className="w-full bg-black/40 border-t border-white/5 py-3 text-center text-[10px] text-slate-500 select-none">
-        旅のお供 ver71 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
+        旅のお供 ver72 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
       </footer>
     </div>
   );

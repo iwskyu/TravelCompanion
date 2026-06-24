@@ -425,6 +425,7 @@ export function generateFallbackPOI(lat: number, lon: number): Partial<Companion
     riverLevel: { name: "該当なし(5km)", level: "-", danger: "平穏" },
     roadDensity1: { roadName: "該当なし(5km)", info: "順調", distance: null },
     roadDensity2: null,
+    intersection: { name: "該当なし(5km)", distance: null, bearing: null },
     seaDistance: seaDist,
     seaBearing: seaBear,
   };
@@ -483,43 +484,70 @@ async function fetchPOIFromOverpassRaw(
 
   try {
     const query = `
-      [out:json][timeout:10];
+      [out:json][timeout:15];
       (
-        node["shop"="convenience"](around:2000,${lat},${lon});
-        node["amenity"="toilets"](around:2000,${lat},${lon});
-        node["internet_access"~"wlan|public"](around:2000,${lat},${lon});
+        node["shop"="convenience"](around:5000,${lat},${lon});
+        node["amenity"="toilets"](around:5000,${lat},${lon});
+        node["internet_access"~"wlan|public"](around:5000,${lat},${lon});
         node["amenity"="fuel"](around:10000,${lat},${lon});
-        node["amenity"="parking"](around:2000,${lat},${lon});
+        node["amenity"="parking"](around:5000,${lat},${lon});
         node["highway"~"rest_area|services"](around:15000,${lat},${lon});
-        node["tourism"="hotel"](around:8000,${lat},${lon});
-        node["tourism"~"hostel|guest_house"](around:8000,${lat},${lon});
-        node["railway"="station"](around:8000,${lat},${lon});
-        node["highway"="bus_stop"](around:2000,${lat},${lon});
-        node["amenity"~"restaurant|cafe"](around:2000,${lat},${lon});
+        node["tourism"="hotel"](around:10000,${lat},${lon});
+        node["tourism"~"hostel|guest_house"](around:10000,${lat},${lon});
+        node["railway"="station"](around:10000,${lat},${lon});
+        node["highway"="bus_stop"](around:5000,${lat},${lon});
+        node["amenity"~"restaurant|cafe"](around:5000,${lat},${lon});
         node["tourism"~"attraction|viewpoint"](around:10000,${lat},${lon});
         node["natural"="peak"](around:15000,${lat},${lon});
         way["waterway"="river"](around:5000,${lat},${lon});
         way["highway"~"motorway|trunk|primary"](around:5000,${lat},${lon});
+        node["highway"~"traffic_signals|crossing|mini_roundabout|give_way"](around:5000,${lat},${lon});
       );
       out center;
     `;
 
-    // 10秒でAbortControllerタイムアウトを設定（確実にリアルなデータをフェッチする猶予を与える）
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    // 複数の主要Overpassミラーを順にフェッチするロジック。
+    // メインが応答しない場合やタイムアウト（1台あたり6秒）した場合に即座に次を試行する
+    const endpoints = [
+      "https://overpass-api.de/api/interpreter",
+      "https://overpass.kumi.systems/api/interpreter",
+      "https://overpass.private.coffee/api/interpreter"
+    ];
 
-    const res = await fetch("https://overpass-api.de/api/interpreter", {
-      method: "POST",
-      body: `data=${encodeURIComponent(query)}`,
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      signal: controller.signal
-    });
+    let res: Response | null = null;
+    let lastError: any = null;
 
-    clearTimeout(timeoutId);
+    for (const url of endpoints) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6500); // 1台あたり6.5秒
 
-    if (!res.ok) throw new Error(`Overpass status ${res.status}`);
+        const response = await fetch(url, {
+          method: "POST",
+          body: `data=${encodeURIComponent(query)}`,
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+        if (response.ok) {
+          res = response;
+          break;
+        } else {
+          console.warn(`Overpass Endpoint ${url} returned status ${response.status}`);
+        }
+      } catch (err) {
+        lastError = err;
+        console.warn(`Overpass Endpoint ${url} failed or timed out:`, err);
+      }
+    }
+
+    if (!res) {
+      throw lastError || new Error("All Overpass endpoints failed or timed out");
+    }
+
     const json = await res.json();
     const elements = json.elements || [];
 
@@ -544,6 +572,7 @@ async function fetchPOIFromOverpassRaw(
     const rivers: any[] = [];
     const mainRoads: any[] = [];
     const seas: any[] = [];
+    const intersections: any[] = [];
 
     for (const el of elements) {
       const elLat = el.lat || (el.center ? el.center.lat : null);
@@ -605,6 +634,9 @@ async function fetchPOIFromOverpassRaw(
       if (tags.natural === "beach" || tags.natural === "coastline" || tags.place === "sea") {
         seas.push(poi);
       }
+      if (tags.highway === "traffic_signals" || tags.highway === "crossing" || tags.highway === "mini_roundabout" || tags.highway === "give_way") {
+        intersections.push(poi);
+      }
     }
 
     const sortByDistance = (arr: any[]) => arr.sort((a, b) => a.distance - b.distance);
@@ -625,6 +657,7 @@ async function fetchPOIFromOverpassRaw(
     sortByDistance(rivers);
     sortByDistance(mainRoads);
     sortByDistance(seas);
+    sortByDistance(intersections);
 
     const getTwo = (arr: any[]) => [arr[0] || null, arr[1] || null];
 
@@ -644,6 +677,7 @@ async function fetchPOIFromOverpassRaw(
     const [river, _r2] = getTwo(rivers);
     const [road1, road2] = getTwo(mainRoads);
     const [sea, _s2] = getTwo(seas);
+    const [inter1, _inter2] = getTwo(intersections);
 
     const mapStation = (st: any) => {
       if (!st) return null;
@@ -693,6 +727,24 @@ async function fetchPOIFromOverpassRaw(
         distance: road.distance,
       };
     };
+
+    let intersectionData = null;
+    if (inter1) {
+      let name = inter1.name;
+      if (name === "-" || !name) {
+        const typeLabel = inter1.tags.highway === "traffic_signals" ? "信号交差点" 
+          : inter1.tags.highway === "crossing" ? "横断歩道交差" 
+          : inter1.tags.highway === "mini_roundabout" ? "ロータリー" 
+          : "交差点";
+        const nearbyRoad = road1?.roadName && road1.roadName !== "-" ? road1.roadName : "";
+        name = nearbyRoad ? `${nearbyRoad}付近の${typeLabel}` : `周辺の${typeLabel}`;
+      }
+      intersectionData = {
+        name,
+        distance: inter1.distance,
+        bearing: inter1.bearing
+      };
+    }
 
     let seaDist = sea ? sea.distance : null;
     let seaBear = sea ? sea.bearing : null;
@@ -744,6 +796,7 @@ async function fetchPOIFromOverpassRaw(
       riverLevel: riverLevel || fallback.riverLevel,
       roadDensity1: getRoadDensity(road1) || fallback.roadDensity1,
       roadDensity2: getRoadDensity(road2) || fallback.roadDensity2,
+      intersection: intersectionData || fallback.intersection,
       seaDistance: seaDist || fallback.seaDistance,
       seaBearing: seaBear || fallback.seaBearing,
     };
