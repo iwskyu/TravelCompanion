@@ -109,6 +109,11 @@ export default function App() {
   // 位置情報とAPI用経緯度
   const currentCoords = useRef<{ lat: number; lon: number } | null>(null);
 
+  // バッテリー延命＆動的スキップ用の前回の位置・日付Ref
+  const lastUpdatedCoords = useRef<{ lat: number; lon: number } | null>(null);
+  const lastUpdatedDateStr = useRef<string>(new Date().toDateString());
+  const micIntervalId = useRef<any>(null);
+
   // マイク周りのRef
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -164,9 +169,10 @@ export default function App() {
         // デシベル簡易計算 (0〜100dBの範囲にスケーリング)
         const db = Math.round((average / 255) * 100);
         latestDb.current = db;
-        requestAnimationFrame(updateVolume);
       };
-      updateVolume();
+
+      // requestAnimationFrameを廃止し、250msのタイマーで解析（バッテリー消費低減）
+      micIntervalId.current = setInterval(updateVolume, 250);
     } catch (e) {
       console.warn("Failed to init audio analyser", e);
     }
@@ -185,26 +191,36 @@ export default function App() {
   const updateTileData = async (tileIds: TileId[]) => {
     if (!currentCoords.current) return;
     const { lat, lon } = currentCoords.current;
-
     const nowStamp = Date.now();
+    const now = new Date();
+    const dateStr = now.toDateString();
+
+    const isSameDay = lastUpdatedDateStr.current === dateStr;
+    const moved = !lastUpdatedCoords.current ||
+      Math.abs(lastUpdatedCoords.current.lat - lat) > 0.0005 ||
+      Math.abs(lastUpdatedCoords.current.lon - lon) > 0.0005;
+
     const promises: Promise<void>[] = [];
 
     try {
       // 1. 住所・郵便番号
       if (tileIds.includes("address") || tileIds.includes("zipcode")) {
-        promises.push((async () => {
-          const res = await fetchAddressAndZip(lat, lon);
-          setData((prev) => ({
-            ...prev,
-            address: res.address,
-            zipcode: res.zipcode,
-          }));
-          setLastUpdated((prev) => ({
-            ...prev,
-            address: nowStamp,
-            zipcode: nowStamp,
-          }));
-        })());
+        // 大きく移動していない、かつ既に有効データがある場合はフェッチを完全にスキップ（バッテリー延命）
+        if (moved || !data.address || !data.zipcode) {
+          promises.push((async () => {
+            const res = await fetchAddressAndZip(lat, lon);
+            setData((prev) => ({
+              ...prev,
+              address: res.address,
+              zipcode: res.zipcode,
+            }));
+            setLastUpdated((prev) => ({
+              ...prev,
+              address: nowStamp,
+              zipcode: nowStamp,
+            }));
+          })());
+        }
       }
 
       // 2. 天気・気象・気候
@@ -218,16 +234,23 @@ export default function App() {
             precipitation: res.precipitation,
             rainCloudApproach: res.rainCloudApproach,
             uvIndex: res.uvIndex,
-            sunrise: res.sunrise,
-            sunset: res.sunset,
-            wind: res.wind,
-            humidity: res.humidity,
-            elevation: latestGps.current.elevation !== null ? latestGps.current.elevation : (res.elevation !== null ? res.elevation : prev.elevation),
+            // 日の出、日没、標高は「丸一日変わらない/一度出せば十分」なため、すでに値があれば既存のものを優先（上書きしない、再フェッチもしない）
+            sunrise: isSameDay && prev.sunrise ? prev.sunrise : res.sunrise,
+            sunset: isSameDay && prev.sunset ? prev.sunset : res.sunset,
+            elevation: !moved && prev.elevation !== null ? prev.elevation : (latestGps.current.elevation !== null ? latestGps.current.elevation : (res.elevation !== null ? res.elevation : prev.elevation)),
           }));
           setLastUpdated((prev) => {
             const next = { ...prev };
             weatherKeys.forEach(id => {
               if (tileIds.includes(id)) {
+                // 日の出・日没は日付が変わったとき、または初回のみ光らせる
+                if ((id === "sunrise" || id === "sunset") && isSameDay && prev.sunrise) {
+                  return;
+                }
+                // 標高は大きく動いたとき、または初回のみ光らせる
+                if (id === "elevation" && !moved && prev.elevation !== null) {
+                  return;
+                }
                 next[id] = nowStamp;
               }
             });
@@ -253,17 +276,20 @@ export default function App() {
 
       // 4. 海水温
       if (tileIds.includes("seaTemp")) {
-        promises.push((async () => {
-          const res = await fetchSeaTemperature(lat, lon);
-          setData((prev) => ({
-            ...prev,
-            seaTemp: res,
-          }));
-          setLastUpdated((prev) => ({
-            ...prev,
-            seaTemp: nowStamp,
-          }));
-        })());
+        // 大きく移動していない、かつ既にデータがある場合はスキップ
+        if (moved || !data.seaTemp) {
+          promises.push((async () => {
+            const res = await fetchSeaTemperature(lat, lon);
+            setData((prev) => ({
+              ...prev,
+              seaTemp: res,
+            }));
+            setLastUpdated((prev) => ({
+              ...prev,
+              seaTemp: nowStamp,
+            }));
+          })());
+        }
       }
 
       // 5. 周辺POI (Overpass API)
@@ -275,25 +301,32 @@ export default function App() {
         "gourmet1", "gourmet2", "mountain", "attraction1", "attraction2", "seaDistance", "seaBearing"
       ];
       if (tileIds.some(id => poiKeys.includes(id))) {
-        promises.push((async () => {
-          const res = await fetchPOIFromOverpass(lat, lon);
-          setData((prev) => ({
-            ...prev,
-            ...res,
-          }));
-          setLastUpdated((prev) => {
-            const next = { ...prev };
-            poiKeys.forEach(id => {
-              if (tileIds.includes(id)) {
-                next[id] = nowStamp;
-              }
+        // 大きく移動していない、かつ既にデータがある場合はスキップしてバッテリー・通信量を極限まで削減
+        if (moved || !data.river) {
+          promises.push((async () => {
+            const res = await fetchPOIFromOverpass(lat, lon);
+            setData((prev) => ({
+              ...prev,
+              ...res,
+            }));
+            setLastUpdated((prev) => {
+              const next = { ...prev };
+              poiKeys.forEach(id => {
+                if (tileIds.includes(id)) {
+                  next[id] = nowStamp;
+                }
+              });
+              return next;
             });
-            return next;
-          });
-        })());
+          })());
+        }
       }
 
       await Promise.all(promises);
+
+      // 更新完了時に位置・日付を履歴に保存
+      lastUpdatedCoords.current = { lat, lon };
+      lastUpdatedDateStr.current = dateStr;
 
     } catch (err) {
       console.error("Failed to update tiles partially:", tileIds, err);
@@ -323,40 +356,53 @@ export default function App() {
     const { lat, lon } = currentCoords.current || { lat: 35.6895, lon: 139.6917 };
     const nowStamp = Date.now();
     const now = new Date();
+    const dateStr = now.toDateString();
+
+    const isSameDay = lastUpdatedDateStr.current === dateStr;
+    const moved = !lastUpdatedCoords.current ||
+      Math.abs(lastUpdatedCoords.current.lat - lat) > 0.0005 ||
+      Math.abs(lastUpdatedCoords.current.lon - lon) > 0.0005;
 
     // -------------------------------------------------------------
     // ステップ1: API不要でローカルで即座に計算できるデータをただちに更新・光らせる
     // -------------------------------------------------------------
-    const moonAgeData = getMoonAgeAndState(now);
-    const sunPos = getSolarPosition(lat, lon, now);
-    const tides = getTideTimes(now, moonAgeData.age);
+    const updateMoonAndTide = !isSameDay || !data.moonAge || !data.highTide || !data.lowTide;
+    const updateGeoDistance = moved || !data.tokyoDistance || !data.fujiDistance || !data.seaDistance;
+    const updateCapital = moved || !data.prefecturalCapital;
 
-    const tokyoDist = calculateDistance(lat, lon, DESTINATIONS.TOKYO_STATION.lat, DESTINATIONS.TOKYO_STATION.lon);
-    const tokyoBear = calculateBearing(lat, lon, DESTINATIONS.TOKYO_STATION.lat, DESTINATIONS.TOKYO_STATION.lon);
+    const moonAgeData = updateMoonAndTide ? getMoonAgeAndState(now) : data.moonAge!;
+    const sunPos = getSolarPosition(lat, lon, now); // 太陽位置は常に更新（時間で変化するため）
+    const tides = updateMoonAndTide ? getTideTimes(now, moonAgeData.age) : { highTides: [data.highTide || "-"], lowTides: [data.lowTide || "-"] };
 
-    const fujiDist = calculateDistance(lat, lon, DESTINATIONS.MT_FUJI.lat, DESTINATIONS.MT_FUJI.lon);
-    const fujiBear = calculateBearing(lat, lon, DESTINATIONS.MT_FUJI.lat, DESTINATIONS.MT_FUJI.lon);
+    const tokyoDist = updateGeoDistance ? calculateDistance(lat, lon, DESTINATIONS.TOKYO_STATION.lat, DESTINATIONS.TOKYO_STATION.lon) : data.tokyoDistance;
+    const tokyoBear = updateGeoDistance ? calculateBearing(lat, lon, DESTINATIONS.TOKYO_STATION.lat, DESTINATIONS.TOKYO_STATION.lon) : data.tokyoBearing;
 
-    const capital = findNearestCapital(lat, lon);
+    const fujiDist = updateGeoDistance ? calculateDistance(lat, lon, DESTINATIONS.MT_FUJI.lat, DESTINATIONS.MT_FUJI.lon) : data.fujiDistance;
+    const fujiBear = updateGeoDistance ? calculateBearing(lat, lon, DESTINATIONS.MT_FUJI.lat, DESTINATIONS.MT_FUJI.lon) : data.fujiBearing;
 
-    // 海までのデフォルト距離（POIがない場合のバックアップを即座に計算）
-    const seaBases = [
-      { name: "太平洋(相模湾)", lat: 35.2, lon: 139.3 },
-      { name: "日本海", lat: 37.9, lon: 139.1 },
-      { name: "瀬戸内海", lat: 34.3, lon: 134.0 },
-      { name: "オホーツク海", lat: 44.0, lon: 144.0 },
-    ];
-    let minDist = Infinity;
-    let targetBase = seaBases[0];
-    for (const b of seaBases) {
-      const d = calculateDistance(lat, lon, b.lat, b.lon);
-      if (d < minDist) {
-        minDist = d;
-        targetBase = b;
+    const capital = updateCapital ? findNearestCapital(lat, lon) : data.prefecturalCapital;
+
+    let seaDist = data.seaDistance;
+    let seaBear = data.seaBearing;
+    if (updateGeoDistance) {
+      const seaBases = [
+        { name: "太平洋(相模湾)", lat: 35.2, lon: 139.3 },
+        { name: "日本海", lat: 37.9, lon: 139.1 },
+        { name: "瀬戸内海", lat: 34.3, lon: 134.0 },
+        { name: "オホーツク海", lat: 44.0, lon: 144.0 },
+      ];
+      let minDist = Infinity;
+      let targetBase = seaBases[0];
+      for (const b of seaBases) {
+        const d = calculateDistance(lat, lon, b.lat, b.lon);
+        if (d < minDist) {
+          minDist = d;
+          targetBase = b;
+        }
       }
+      seaDist = minDist;
+      seaBear = calculateBearing(lat, lon, targetBase.lat, targetBase.lon);
     }
-    const seaDist = minDist;
-    const seaBear = calculateBearing(lat, lon, targetBase.lat, targetBase.lon);
 
     const localCalculatedData = {
       moonAge: moonAgeData,
@@ -379,10 +425,19 @@ export default function App() {
     };
 
     const immediateTileIds: TileId[] = [
-      "moonAge", "sunPosition", "highTide", "lowTide", "tokyoDistance",
-      "fujiDistance", "prefecturalCapital", "seaDistance",
+      "sunPosition",
       "tilt", "bearing", "gpsAccuracy", "speed", "elevation"
     ];
+
+    if (updateMoonAndTide) {
+      immediateTileIds.push("moonAge", "highTide", "lowTide");
+    }
+    if (updateGeoDistance) {
+      immediateTileIds.push("tokyoDistance", "fujiDistance", "seaDistance");
+    }
+    if (updateCapital) {
+      immediateTileIds.push("prefecturalCapital");
+    }
 
     setData((prev) => ({
       ...prev,
@@ -404,7 +459,12 @@ export default function App() {
     // -------------------------------------------------------------
     
     // API 1: 住所・郵便番号 (Nominatim)
+    // 大きく移動していなければAPI呼び出しを完全にスキップ
     const taskAddress = async () => {
+      if (!moved && data.address && data.zipcode) {
+        console.log("Battery Save: Skip Nominatim API because position hasn't changed significantly.");
+        return;
+      }
       try {
         const res = await fetchAddressAndZip(lat, lon);
         const stamp = Date.now();
@@ -424,6 +484,8 @@ export default function App() {
     };
 
     // API 2: 天気・気象・気候 (Open-Meteo)
+    // 常に最新データを取得しますが、1日中不変の日の出・日の入り、大きく移動しないと変わらない標高は、
+    // すでに有効な値があれば光らせない（lastUpdatedに含めない）ことでチカチカを防止。
     const taskWeather = async () => {
       try {
         const res = await fetchWeatherAndMeteorology(lat, lon);
@@ -434,17 +496,24 @@ export default function App() {
           precipitation: res.precipitation,
           rainCloudApproach: res.rainCloudApproach,
           uvIndex: res.uvIndex,
-          sunrise: res.sunrise,
-          sunset: res.sunset,
+          sunrise: isSameDay && prev.sunrise ? prev.sunrise : res.sunrise,
+          sunset: isSameDay && prev.sunset ? prev.sunset : res.sunset,
           wind: res.wind,
           humidity: res.humidity,
-          elevation: latestGps.current.elevation !== null ? latestGps.current.elevation : (res.elevation !== null ? res.elevation : prev.elevation),
+          elevation: !moved && prev.elevation !== null ? prev.elevation : (latestGps.current.elevation !== null ? latestGps.current.elevation : (res.elevation !== null ? res.elevation : prev.elevation)),
         }));
         
         const weatherTileIds: TileId[] = [
-          "weather", "precipitation", "rainCloudApproach", "uvIndex",
-          "sunrise", "sunset", "wind", "humidity", "elevation"
+          "weather", "precipitation", "rainCloudApproach", "uvIndex", "wind", "humidity"
         ];
+        
+        if (!isSameDay || !data.sunrise) {
+          weatherTileIds.push("sunrise", "sunset");
+        }
+        if (moved || data.elevation === null) {
+          weatherTileIds.push("elevation");
+        }
+
         setLastUpdated((prev) => {
           const next = { ...prev };
           weatherTileIds.forEach((id) => {
@@ -476,7 +545,12 @@ export default function App() {
     };
 
     // API 4: 海水温 (Open-Meteo Marine)
+    // 大きく移動していなければフェッチをスキップ
     const taskSeaTemp = async () => {
+      if (!moved && data.seaTemp) {
+        console.log("Battery Save: Skip Marine API because position hasn't changed significantly.");
+        return;
+      }
       try {
         const res = await fetchSeaTemperature(lat, lon);
         const stamp = Date.now();
@@ -494,7 +568,12 @@ export default function App() {
     };
 
     // API 5: 周辺POI (Overpass API)
+    // 大きく移動していなければAPIフェッチを完全にスキップ（超低消費電力・低トラフィック化）
     const taskPOI = async () => {
+      if (!moved && data.river) {
+        console.log("Battery Save: Skip Overpass API because position hasn't changed significantly.");
+        return;
+      }
       try {
         const res = await fetchPOIFromOverpass(lat, lon);
         const stamp = Date.now();
@@ -531,6 +610,8 @@ export default function App() {
       taskPOI()
     ]).finally(() => {
       setIsUpdating(false);
+      lastUpdatedCoords.current = { lat, lon };
+      lastUpdatedDateStr.current = dateStr;
     });
   };
 
@@ -589,9 +670,9 @@ export default function App() {
     };
     window.addEventListener("deviceorientation", handleOrientation, true);
 
-    // --- 1秒毎更新 ---
-    // 📐傾き, 🧭方角, マイクdBをまとめて1秒毎に1回だけ一括ステート描画（スロットリング）
-    const interval1s = setInterval(() => {
+    // --- 3秒毎更新 (旧1秒毎) ---
+    // 📐傾き, 🧭方角, マイクdBをまとめて3秒毎に1回だけ一括ステート描画（スロットリングして描画負荷・バッテリーを大幅節約）
+    const interval3s = setInterval(() => {
       const nowStamp = Date.now();
       const heading = latestHeading.current;
       
@@ -608,11 +689,11 @@ export default function App() {
         tilt: nowStamp,
         bearing: nowStamp,
       }));
-    }, 1000);
+    }, 3000);
 
-    // --- 5秒毎更新 ---
+    // --- 10秒毎更新 (旧5秒毎) ---
     // 📡GPS精度, 🚗移動速度, ⛰️標高
-    const interval5s = setInterval(() => {
+    const interval10s = setInterval(() => {
       const nowStamp = Date.now();
       setData((prev) => ({
         ...prev,
@@ -626,7 +707,7 @@ export default function App() {
         speed: nowStamp,
         elevation: nowStamp,
       }));
-    }, 5000);
+    }, 10000);
 
     // --- 3分毎更新 ---
     // 📮郵便番号, 🗺️現在地
@@ -672,13 +753,19 @@ export default function App() {
         navigator.geolocation.clearWatch(watchId);
       }
       window.removeEventListener("deviceorientation", handleOrientation, true);
-      clearInterval(interval1s);
-      clearInterval(interval5s);
+      clearInterval(interval3s);
+      clearInterval(interval10s);
       clearInterval(interval3m);
       clearInterval(interval10m);
       clearInterval(interval15m);
       clearInterval(interval20m);
       clearInterval(interval60m);
+      if (micIntervalId.current) {
+        clearInterval(micIntervalId.current);
+      }
+      if (audioCtxRef.current) {
+        audioCtxRef.current.close().catch(() => {});
+      }
     };
   }, [started]);
 
