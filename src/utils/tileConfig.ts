@@ -85,21 +85,6 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
   },
 
   // ==========================================
-  // ジャンル 2: 暦・天体計算 (API不要)
-  // 枠色: インディゴ (border-indigo)
-  // ==========================================
-  {
-    id: "moonAge",
-    label: "月齢",
-    emoji: "🌙",
-    borderColorClass: "border-indigo",
-    render: (data) => {
-      if (!data.moonAge) return "-";
-      return `${data.moonAge.state}\n${data.moonAge.age.toFixed(1)}日`;
-    },
-  },
-
-  // ==========================================
   // ジャンル 4: 目標地距離 (経緯度計算・API不要)
   // 枠色: 青 (border-blue)
   // ==========================================
@@ -209,25 +194,15 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     },
   },
   {
-    id: "sunrise",
-    label: "日の出",
+    id: "sunriseSunset",
+    label: "日の出・日没",
     emoji: "🌅",
     borderColorClass: "border-yellow",
     render: (data, heading) => {
-      if (!data.sunrise) return "-";
-      const arrow = getArrow(data.sunrise.bearing, heading);
-      return `${data.sunrise.time}\n方位 ${arrow}`;
-    },
-  },
-  {
-    id: "sunset",
-    label: "日没",
-    emoji: "🌇",
-    borderColorClass: "border-yellow",
-    render: (data, heading) => {
-      if (!data.sunset) return "-";
-      const arrow = getArrow(data.sunset.bearing, heading);
-      return `${data.sunset.time}\n方位 ${arrow}`;
+      if (!data.sunrise && !data.sunset) return "-";
+      const r1 = data.sunrise ? `${data.sunrise.time} ${getArrow(data.sunrise.bearing, heading)}` : "-";
+      const r2 = data.sunset ? `${data.sunset.time} ${getArrow(data.sunset.bearing, heading)}` : "-";
+      return `出: ${r1}\n没: ${r2}`;
     },
   },
   {
@@ -266,6 +241,21 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       return `${data.airQuality.pollenText}`;
     },
   },
+
+  // ==========================================
+  // 「海まで」の前に移動した月齢
+  // ==========================================
+  {
+    id: "moonAge",
+    label: "月齢",
+    emoji: "🌙",
+    borderColorClass: "border-indigo",
+    render: (data) => {
+      if (!data.moonAge) return "-";
+      return `${data.moonAge.state}\n${data.moonAge.age.toFixed(1)}日`;
+    },
+  },
+
   {
     id: "seaDistance",
     label: "海まで",
@@ -288,50 +278,15 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     },
   },
   {
-    id: "highTide",
-    label: "潮汐満潮",
+    id: "highLowTide",
+    label: "満潮・干潮",
     emoji: "🌊",
     borderColorClass: "border-emerald",
     render: (data) => {
-      if (!data.highTide || data.highTide === "-") return "-";
-      return `満潮時間\n${data.highTide}`;
-    },
-  },
-  {
-    id: "lowTide",
-    label: "潮汐干潮",
-    emoji: "🌊",
-    borderColorClass: "border-emerald",
-    render: (data) => {
-      if (!data.lowTide || data.lowTide === "-") return "-";
-      return `干潮時間\n${data.lowTide}`;
-    },
-  },
-
-  // ==========================================
-  // 干潮の後に移動した位置・現在地情報
-  // ==========================================
-  {
-    id: "zipcode",
-    label: "郵便番号",
-    emoji: "📮",
-    borderColorClass: "border-blue",
-    render: (data) => {
-      if (!data.zipcode || data.zipcode === "-") return "-";
-      return `郵便番号\n〒${data.zipcode}`;
-    },
-  },
-  {
-    id: "address",
-    label: "現在地",
-    emoji: "🗺️",
-    borderColorClass: "border-blue",
-    render: (data) => {
-      const addr = data.address || "-";
-      if (addr.length > 8) {
-        return addr.replace(/([都府県]|市区郡)/g, "$1\n");
-      }
-      return addr;
+      const high = data.highTide && data.highTide !== "-" ? data.highTide : "-";
+      const low = data.lowTide && data.lowTide !== "-" ? data.lowTide : "-";
+      if (high === "-" && low === "-") return "-";
+      return `満潮: ${high}\n干潮: ${low}`;
     },
   },
 
@@ -358,6 +313,21 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
         return "5km以内に該当なし";
       }
       return `${data.riverLevel.name}\n${data.riverLevel.level} (${data.riverLevel.danger})`;
+    },
+  },
+
+  // ==========================================
+  // 河川水位の後ろに移動した山の名前
+  // ==========================================
+  {
+    id: "mountain",
+    label: "山の名前・標高・距離",
+    emoji: "⛰️",
+    borderColorClass: "border-blue",
+    render: (data) => {
+      if (!data.mountain) return "-";
+      if (data.mountain.name === "5km以内に該当なし") return "5km以内に該当なし";
+      return `${data.mountain.name}\n標高 ${Math.round(data.mountain.elevation)}m / ${formatDistance(data.mountain.distance)}`;
     },
   },
 
@@ -492,7 +462,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
   {
     id: "toilet2",
     label: "トイレ2",
-    emoji: "🚾",
+    emoji: "𚾾",
     borderColorClass: "border-brown",
     render: (data, heading) => {
       if (data.toilet1?.name === "5km以内に該当なし") return "5km以内に該当なし";
@@ -654,17 +624,6 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
   // ジャンル 9: 山・観光地
   // 枠色: 青 (border-blue) / 紫 (border-purple)
   // ==========================================
-  {
-    id: "mountain",
-    label: "山の名前・標高・距離",
-    emoji: "⛰️",
-    borderColorClass: "border-blue",
-    render: (data) => {
-      if (!data.mountain) return "-";
-      if (data.mountain.name === "5km以内に該当なし") return "5km以内に該当なし";
-      return `${data.mountain.name}\n標高 ${Math.round(data.mountain.elevation)}m / ${formatDistance(data.mountain.distance)}`;
-    },
-  },
   {
     id: "attraction1",
     label: "観光地1",

@@ -99,6 +99,14 @@ export default function App() {
     isPausedRef.current = isPaused;
   }, [isPaused]);
 
+  const togglePause = () => {
+    const nextPaused = !isPaused;
+    setIsPaused(nextPaused);
+    if (!nextPaused && started) {
+      triggerFullUpdate();
+    }
+  };
+
   // タイルごとの最終更新日時（タイムスタンプ）を保持。
   // これを使って各タイルの黄色いフラッシュ演出を制御する。
   const [lastUpdated, setLastUpdated] = useState<Record<TileId, number>>({});
@@ -230,7 +238,7 @@ export default function App() {
       }
 
       // 2. 天気・気象・気候
-      const weatherKeys: TileId[] = ["weather", "precipitation", "rainCloudApproach", "uvIndex", "sunrise", "sunset", "wind", "humidity", "elevation"];
+      const weatherKeys: TileId[] = ["weather", "precipitation", "rainCloudApproach", "uvIndex", "sunrise", "sunset", "sunriseSunset", "wind", "humidity", "elevation"];
       if (tileIds.some(id => weatherKeys.includes(id))) {
         promises.push((async () => {
           const res = await fetchWeatherAndMeteorology(lat, lon);
@@ -250,7 +258,7 @@ export default function App() {
             weatherKeys.forEach(id => {
               if (tileIds.includes(id)) {
                 // 日の出・日没は日付が変わったとき、または初回のみ光らせる
-                if ((id === "sunrise" || id === "sunset") && isSameDay && prev.sunrise) {
+                if ((id === "sunrise" || id === "sunset" || id === "sunriseSunset") && isSameDay && prev.sunrise) {
                   return;
                 }
                 // 標高は大きく動いたとき、または初回のみ光らせる
@@ -436,7 +444,7 @@ export default function App() {
     ];
 
     if (updateMoonAndTide) {
-      immediateTileIds.push("moonAge", "highTide", "lowTide");
+      immediateTileIds.push("moonAge", "highTide", "lowTide", "highLowTide");
     }
     if (updateGeoDistance) {
       immediateTileIds.push("tokyoDistance", "fujiDistance", "seaDistance");
@@ -514,7 +522,7 @@ export default function App() {
         ];
         
         if (!isSameDay || !data.sunrise) {
-          weatherTileIds.push("sunrise", "sunset");
+          weatherTileIds.push("sunrise", "sunset", "sunriseSunset");
         }
         if (moved || data.elevation === null) {
           weatherTileIds.push("elevation");
@@ -718,19 +726,19 @@ export default function App() {
     }, 10000);
 
     // --- 3分毎更新 ---
-    // 📮郵便番号, 🗺️現在地
+    // 📮郵便番号, 🗺️現在地 (最上部表示用)
     const interval3m = setInterval(() => {
       if (isPausedRef.current) return;
       updateTileData(["zipcode", "address"]);
     }, 3 * 60 * 1000);
 
     // --- 10分毎更新 ---
-    // POI（コンビニ、トイレ、駅、バス、Wi-Fi、GS、駐車場、道の駅、ホテル、グルメ、観光地、川、道路）、日の出・日没、大気汚染
+    // POI（コンビニ、トイレ、駅、バス、Wi-Fi、GS、駐車場、道の駅、ホテル、グルメ、観光地、川、道路）、日の出・日没、大気汚染、満潮・干潮
     const interval10m = setInterval(() => {
       if (isPausedRef.current) return;
       const list10m: TileId[] = [
         "tokyoDistance", "seaDistance", "fujiDistance", "prefecturalCapital",
-        "wind", "humidity", "airQuality", "seaTemp", "highTide", "lowTide", "sunPosition",
+        "wind", "humidity", "airQuality", "seaTemp", "highLowTide", "sunPosition",
         "river", "riverLevel", "roadDensity1", "roadDensity2",
         "convenience1", "convenience2", "toilet1", "toilet2", "wifi1", "wifi2",
         "gas1", "gas2", "parking1", "parking2", "roadStation1", "roadStation2",
@@ -748,10 +756,10 @@ export default function App() {
     }, 15 * 60 * 1000);
 
     // --- 20分毎更新 ---
-    // 日の出、日没
+    // 日の出・日没
     const interval20m = setInterval(() => {
       if (isPausedRef.current) return;
-      updateTileData(["sunrise", "sunset"]);
+      updateTileData(["sunriseSunset"]);
     }, 20 * 60 * 1000);
 
     // --- 60分毎更新 ---
@@ -800,7 +808,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <h1 className="text-lg sm:text-xl font-black text-white tracking-wider flex items-center gap-1.5">
-              旅のお供 <span className="text-xs font-normal opacity-70">ver69</span>
+              旅のお供 <span className="text-xs font-normal opacity-70">ver70</span>
             </h1>
             <span className="hidden md:inline-block text-xs text-slate-400 border-l border-white/20 pl-2">
               📍 {data.zipcode ? `〒${data.zipcode} ` : ""}{data.address || "現在地を取得中..."}
@@ -820,7 +828,7 @@ export default function App() {
 
           {/* 自動更新一時停止/再開ボタン */}
           <button
-            onClick={() => setIsPaused(!isPaused)}
+            onClick={togglePause}
             className={`flex items-center gap-1.5 transition-all font-bold border px-3 py-1.5 rounded-lg text-xs sm:text-sm select-none cursor-pointer ${
               isPaused 
                 ? "bg-rose-600/30 border-rose-500 hover:bg-rose-600/50 text-rose-200 animate-pulse" 
@@ -870,7 +878,7 @@ export default function App() {
 
       {/* フッター */}
       <footer className="w-full bg-black/40 border-t border-white/5 py-3 text-center text-[10px] text-slate-500 select-none">
-        旅のお供 ver69 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
+        旅のお供 ver70 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
       </footer>
     </div>
   );

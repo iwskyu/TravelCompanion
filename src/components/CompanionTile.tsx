@@ -55,18 +55,18 @@ export function CompanionTile({
 
   // 文字数に応じてフォントサイズを決定。枠内に収まるできるだけ大きいサイズにし、統一感を出す
   const getFontSizeClass = (text: string) => {
-    if (!text) return "text-[13px] sm:text-[14px] md:text-[16px]";
+    if (!text) return "text-[14px] sm:text-[15px] md:text-[17px]";
     const len = text.length;
     // ほとんどの2行表記（14文字以下）に最高の統一感を持たせる
     if (len <= 14) {
-      return "text-[13px] sm:text-[14px] md:text-[16px] leading-tight";
+      return "text-[14px] sm:text-[15px] md:text-[17px] leading-tight";
     }
     // 少し長めの文字列（15〜24文字）
     if (len <= 24) {
-      return "text-[11px] sm:text-[12px] md:text-[13px] leading-snug";
+      return "text-[12px] sm:text-[13px] md:text-[14px] leading-snug";
     }
     // 非常に長い住所や名称
-    return "text-[9px] sm:text-[10px] md:text-[11px] leading-none";
+    return "text-[10px] sm:text-[11px] md:text-[12px] leading-none";
   };
 
   const fontSizeClass = getFontSizeClass(valueString);
@@ -84,7 +84,7 @@ export function CompanionTile({
       className={`relative flex flex-col justify-center px-2 py-0.5 border border-solid transition-all duration-300 ease-out h-[72px] sm:h-20 md:h-24 overflow-hidden select-none ${borderClass}`}
     >
       {/* 項目名（小さく表示） */}
-      <div className="text-[10px] text-gray-300 font-normal opacity-85 leading-tight mb-0.5 truncate">
+      <div className="text-[11px] text-gray-300 font-normal opacity-85 leading-tight mb-0.5 truncate">
         {config.emoji} {config.label}
       </div>
 
