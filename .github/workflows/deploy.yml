@@ -3,7 +3,8 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches:
-      - main # デフォルトブランチがmasterの場合は master に変更してください
+      - main
+      - master
 
 # GitHub Pagesへのデプロイに必要な権限を設定
 permissions:
