@@ -25,6 +25,10 @@ export function CompanionTile({
 
   // データの最終更新時刻が変わったら一時的に黄色にする（フラッシュ演出）
   useEffect(() => {
+    // 傾きと方角は黄色に光らせない（常時光ることになるため）
+    if (config.id === "tilt" || config.id === "bearing") {
+      return;
+    }
     if (lastUpdatedTime > 0) {
       setIsFlashing(true);
       const timer = setTimeout(() => {
@@ -32,7 +36,7 @@ export function CompanionTile({
       }, 1500); // 1.5秒間黄色
       return () => clearTimeout(timer);
     }
-  }, [lastUpdatedTime]);
+  }, [lastUpdatedTime, config.id]);
 
   let valueContent: React.ReactNode = "-";
   try {
@@ -43,18 +47,20 @@ export function CompanionTile({
   }
   const valueString = typeof valueContent === "string" ? valueContent : "";
 
-  // 文字数に応じてフォントサイズを決定。可能な限り最大の統一フォントサイズを適用する
+  // 文字数に応じてフォントサイズを決定。枠内に収まるできるだけ大きいサイズにし、統一感を出す
   const getFontSizeClass = (text: string) => {
-    if (!text) return "text-sm sm:text-base";
+    if (!text) return "text-[13px] sm:text-[14px] md:text-[16px]";
     const len = text.length;
-    // 長さに応じた最大統一サイズを適用し、枠内に綺麗に収める（見切れ・省略の絶対禁止）
-    if (len <= 12) {
-      return "text-[14px] sm:text-[16px] md:text-[18px] leading-tight";
+    // ほとんどの2行表記（14文字以下）に最高の統一感を持たせる
+    if (len <= 14) {
+      return "text-[13px] sm:text-[14px] md:text-[16px] leading-tight";
     }
-    if (len <= 22) {
-      return "text-[12px] sm:text-[13px] md:text-[15px] leading-snug";
+    // 少し長めの文字列（15〜24文字）
+    if (len <= 24) {
+      return "text-[11px] sm:text-[12px] md:text-[13px] leading-snug";
     }
-    return "text-[10px] sm:text-[11px] md:text-[12px] leading-none";
+    // 非常に長い住所や名称
+    return "text-[9px] sm:text-[10px] md:text-[11px] leading-none";
   };
 
   const fontSizeClass = getFontSizeClass(valueString);
