@@ -23,21 +23,6 @@ export function CompanionTile({
 }: CompanionTileProps) {
   const [isFlashing, setIsFlashing] = useState(false);
 
-  // データの最終更新時刻が変わったら一時的に黄色にする（フラッシュ演出）
-  useEffect(() => {
-    // 傾きと方角は黄色に光らせない（常時光ることになるため）
-    if (config.id === "tilt" || config.id === "bearing") {
-      return;
-    }
-    if (lastUpdatedTime > 0) {
-      setIsFlashing(true);
-      const timer = setTimeout(() => {
-        setIsFlashing(false);
-      }, 1500); // 1.5秒間黄色
-      return () => clearTimeout(timer);
-    }
-  }, [lastUpdatedTime, config.id]);
-
   let valueContent: React.ReactNode = "-";
   try {
     valueContent = config.render(data, deviceHeading);
@@ -46,6 +31,27 @@ export function CompanionTile({
     valueContent = "エラー";
   }
   const valueString = typeof valueContent === "string" ? valueContent : "";
+
+  const prevValueRef = React.useRef<string>(valueString);
+
+  // データの最終更新時刻が変わったら一時的に黄色にする（フラッシュ演出）
+  useEffect(() => {
+    // 傾きと方角は黄色に光らせない（常時光ることになるため）
+    if (config.id === "tilt" || config.id === "bearing") {
+      return;
+    }
+    
+    const hasChanged = prevValueRef.current !== valueString;
+    prevValueRef.current = valueString;
+
+    if (lastUpdatedTime > 0 && hasChanged) {
+      setIsFlashing(true);
+      const timer = setTimeout(() => {
+        setIsFlashing(false);
+      }, 1500); // 1.5秒間黄色
+      return () => clearTimeout(timer);
+    }
+  }, [lastUpdatedTime, valueString, config.id]);
 
   // 文字数に応じてフォントサイズを決定。枠内に収まるできるだけ大きいサイズにし、統一感を出す
   const getFontSizeClass = (text: string) => {

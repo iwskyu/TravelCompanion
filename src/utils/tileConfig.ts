@@ -86,13 +86,13 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
 
   // ==========================================
   // ジャンル 2: 暦・天体計算 (API不要)
-  // 枠色: 紺 (border-navy)
+  // 枠色: インディゴ (border-indigo)
   // ==========================================
   {
     id: "moonAge",
     label: "月齢",
     emoji: "🌙",
-    borderColorClass: "border-navy",
+    borderColorClass: "border-indigo",
     render: (data) => {
       if (!data.moonAge) return "-";
       return `${data.moonAge.state}\n${data.moonAge.age.toFixed(1)}日`;
@@ -102,7 +102,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     id: "sunPosition",
     label: "太陽の位置",
     emoji: "🌞",
-    borderColorClass: "border-navy",
+    borderColorClass: "border-indigo",
     render: (data, heading) => {
       if (!data.sunPosition) return "-";
       const arrow = getArrow(data.sunPosition.bearing, heading);

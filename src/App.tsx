@@ -7,7 +7,23 @@ import React, { useState, useEffect, useRef } from "react";
 import { ALL_TILES_CONFIG } from "./utils/tileConfig";
 import { CompanionTile } from "./components/CompanionTile";
 import { InitialOverlay } from "./components/InitialOverlay";
-import { fetchAllCompanionData, getWeatherEmojiAndName } from "./utils/api";
+import {
+  fetchAddressAndZip,
+  fetchWeatherAndMeteorology,
+  fetchAirQualityAndPollen,
+  fetchSeaTemperature,
+  fetchPOIFromOverpass,
+  getWeatherEmojiAndName
+} from "./utils/api";
+import {
+  calculateDistance,
+  calculateBearing,
+  findNearestCapital,
+  getMoonAgeAndState,
+  getSolarPosition,
+  getTideTimes,
+  DESTINATIONS
+} from "./utils/geo";
 import { CompanionData, TileId } from "./types";
 import { RefreshCw, MapPin, Mic, Compass } from "lucide-react";
 
@@ -170,43 +186,121 @@ export default function App() {
     if (!currentCoords.current) return;
     const { lat, lon } = currentCoords.current;
 
+    const nowStamp = Date.now();
+    const promises: Promise<void>[] = [];
+
     try {
-      // APIからすべてのデータをフェッチ（差分APIの統合的なハブ）
-      const apiResult = await fetchAllCompanionData(lat, lon);
-
-      const nowStamp = Date.now();
-      const nextUpdated: Partial<Record<TileId, number>> = {};
-
-      for (const tid of tileIds) {
-        if (tid in apiResult) {
-          nextUpdated[tid] = nowStamp;
-        }
+      // 1. 住所・郵便番号
+      if (tileIds.includes("address") || tileIds.includes("zipcode")) {
+        promises.push((async () => {
+          const res = await fetchAddressAndZip(lat, lon);
+          setData((prev) => ({
+            ...prev,
+            address: res.address,
+            zipcode: res.zipcode,
+          }));
+          setLastUpdated((prev) => ({
+            ...prev,
+            address: nowStamp,
+            zipcode: nowStamp,
+          }));
+        })());
       }
 
-      // 1. dataの更新
-      setData((prev) => {
-        const next = { ...prev };
-        for (const tid of tileIds) {
-          if (tid in apiResult) {
-            // @ts-ignore
-            next[tid] = apiResult[tid];
-          }
-        }
-        return next;
-      });
+      // 2. 天気・気象・気候
+      const weatherKeys: TileId[] = ["weather", "precipitation", "rainCloudApproach", "uvIndex", "sunrise", "sunset", "wind", "humidity", "elevation"];
+      if (tileIds.some(id => weatherKeys.includes(id))) {
+        promises.push((async () => {
+          const res = await fetchWeatherAndMeteorology(lat, lon);
+          setData((prev) => ({
+            ...prev,
+            weather: res.weather,
+            precipitation: res.precipitation,
+            rainCloudApproach: res.rainCloudApproach,
+            uvIndex: res.uvIndex,
+            sunrise: res.sunrise,
+            sunset: res.sunset,
+            wind: res.wind,
+            humidity: res.humidity,
+            elevation: latestGps.current.elevation !== null ? latestGps.current.elevation : (res.elevation !== null ? res.elevation : prev.elevation),
+          }));
+          setLastUpdated((prev) => {
+            const next = { ...prev };
+            weatherKeys.forEach(id => {
+              if (tileIds.includes(id)) {
+                next[id] = nowStamp;
+              }
+            });
+            return next;
+          });
+        })());
+      }
 
-      // 2. lastUpdatedの更新（独立したステート更新。無限ループ防止）
-      setLastUpdated((prevUpdated) => ({
-        ...prevUpdated,
-        ...nextUpdated,
-      }));
+      // 3. 大気・花粉
+      if (tileIds.includes("airQuality")) {
+        promises.push((async () => {
+          const res = await fetchAirQualityAndPollen(lat, lon);
+          setData((prev) => ({
+            ...prev,
+            airQuality: res,
+          }));
+          setLastUpdated((prev) => ({
+            ...prev,
+            airQuality: nowStamp,
+          }));
+        })());
+      }
+
+      // 4. 海水温
+      if (tileIds.includes("seaTemp")) {
+        promises.push((async () => {
+          const res = await fetchSeaTemperature(lat, lon);
+          setData((prev) => ({
+            ...prev,
+            seaTemp: res,
+          }));
+          setLastUpdated((prev) => ({
+            ...prev,
+            seaTemp: nowStamp,
+          }));
+        })());
+      }
+
+      // 5. 周辺POI (Overpass API)
+      const poiKeys: TileId[] = [
+        "river", "riverLevel", "roadDensity1", "roadDensity2",
+        "convenience1", "convenience2", "toilet1", "toilet2", "wifi1", "wifi2",
+        "gas1", "gas2", "parking1", "parking2", "roadStation1", "roadStation2",
+        "hotel", "guesthouse", "station1", "station2", "bus1", "bus2",
+        "gourmet1", "gourmet2", "mountain", "attraction1", "attraction2", "seaDistance", "seaBearing"
+      ];
+      if (tileIds.some(id => poiKeys.includes(id))) {
+        promises.push((async () => {
+          const res = await fetchPOIFromOverpass(lat, lon);
+          setData((prev) => ({
+            ...prev,
+            ...res,
+          }));
+          setLastUpdated((prev) => {
+            const next = { ...prev };
+            poiKeys.forEach(id => {
+              if (tileIds.includes(id)) {
+                next[id] = nowStamp;
+              }
+            });
+            return next;
+          });
+        })());
+      }
+
+      await Promise.all(promises);
 
     } catch (err) {
-      console.error("Failed to update tiles:", tileIds, err);
+      console.error("Failed to update tiles partially:", tileIds, err);
     }
   };
 
-  // 一括更新。全てのAPIからデータを一挙取得。
+  // 一括更新。全てのAPIを順次並行フェッチし、届いたデータから順次画面を更新。
   const triggerFullUpdate = async () => {
     if (isUpdating) return;
     setIsUpdating(true);
@@ -227,38 +321,217 @@ export default function App() {
     }
 
     const { lat, lon } = currentCoords.current || { lat: 35.6895, lon: 139.6917 };
+    const nowStamp = Date.now();
+    const now = new Date();
 
-    try {
-      const fullData = await fetchAllCompanionData(lat, lon);
-      
-      const nowStamp = Date.now();
-      const updatedMap: Record<TileId, number> = {};
+    // -------------------------------------------------------------
+    // ステップ1: API不要でローカルで即座に計算できるデータをただちに更新・光らせる
+    // -------------------------------------------------------------
+    const moonAgeData = getMoonAgeAndState(now);
+    const sunPos = getSolarPosition(lat, lon, now);
+    const tides = getTideTimes(now, moonAgeData.age);
 
-      // すべてのタイルをピカッと光らせる
-      ALL_TILES_CONFIG.forEach((t) => {
-        updatedMap[t.id] = nowStamp;
-      });
+    const tokyoDist = calculateDistance(lat, lon, DESTINATIONS.TOKYO_STATION.lat, DESTINATIONS.TOKYO_STATION.lon);
+    const tokyoBear = calculateBearing(lat, lon, DESTINATIONS.TOKYO_STATION.lat, DESTINATIONS.TOKYO_STATION.lon);
 
-      // 1. dataの更新
-      setData((prev) => ({
-        ...prev,
-        ...fullData,
-        // センサー、GPS、コンパスは現在の瞬時値を反映
-        tilt: { ...latestTilt.current },
-        bearing: { angle: latestHeading.current, direction: getDirectionString(latestHeading.current) },
-        gpsAccuracy: latestGps.current.accuracy,
-        speed: latestGps.current.speed,
-        elevation: fullData.elevation !== null ? fullData.elevation : latestGps.current.elevation,
-      }));
+    const fujiDist = calculateDistance(lat, lon, DESTINATIONS.MT_FUJI.lat, DESTINATIONS.MT_FUJI.lon);
+    const fujiBear = calculateBearing(lat, lon, DESTINATIONS.MT_FUJI.lat, DESTINATIONS.MT_FUJI.lon);
 
-      // 2. lastUpdatedの更新
-      setLastUpdated(updatedMap);
+    const capital = findNearestCapital(lat, lon);
 
-    } catch (e) {
-      console.error("Full update error", e);
-    } finally {
-      setIsUpdating(false);
+    // 海までのデフォルト距離（POIがない場合のバックアップを即座に計算）
+    const seaBases = [
+      { name: "太平洋(相模湾)", lat: 35.2, lon: 139.3 },
+      { name: "日本海", lat: 37.9, lon: 139.1 },
+      { name: "瀬戸内海", lat: 34.3, lon: 134.0 },
+      { name: "オホーツク海", lat: 44.0, lon: 144.0 },
+    ];
+    let minDist = Infinity;
+    let targetBase = seaBases[0];
+    for (const b of seaBases) {
+      const d = calculateDistance(lat, lon, b.lat, b.lon);
+      if (d < minDist) {
+        minDist = d;
+        targetBase = b;
+      }
     }
+    const seaDist = minDist;
+    const seaBear = calculateBearing(lat, lon, targetBase.lat, targetBase.lon);
+
+    const localCalculatedData = {
+      moonAge: moonAgeData,
+      sunPosition: sunPos,
+      highTide: tides.highTides[0] || "-",
+      lowTide: tides.lowTides[0] || "-",
+      tokyoDistance: tokyoDist,
+      tokyoBearing: tokyoBear,
+      fujiDistance: fujiDist,
+      fujiBearing: fujiBear,
+      prefecturalCapital: capital,
+      seaDistance: seaDist,
+      seaBearing: seaBear,
+      
+      // センサー系
+      tilt: { ...latestTilt.current },
+      bearing: { angle: latestHeading.current, direction: getDirectionString(latestHeading.current) },
+      gpsAccuracy: latestGps.current.accuracy,
+      speed: latestGps.current.speed,
+    };
+
+    const immediateTileIds: TileId[] = [
+      "moonAge", "sunPosition", "highTide", "lowTide", "tokyoDistance",
+      "fujiDistance", "prefecturalCapital", "seaDistance",
+      "tilt", "bearing", "gpsAccuracy", "speed", "elevation"
+    ];
+
+    setData((prev) => ({
+      ...prev,
+      ...localCalculatedData,
+      elevation: latestGps.current.elevation !== null ? latestGps.current.elevation : prev.elevation,
+    }));
+
+    setLastUpdated((prev) => {
+      const next = { ...prev };
+      immediateTileIds.forEach((id) => {
+        next[id] = nowStamp;
+      });
+      return next;
+    });
+
+    // -------------------------------------------------------------
+    // ステップ2: 各種外部APIリクエストを個別の並列非同期タスクとして起動し、
+    // 届いた順に即時反映・光らせる（Promise.allによる一括待ちを行わない）
+    // -------------------------------------------------------------
+    
+    // API 1: 住所・郵便番号 (Nominatim)
+    const taskAddress = async () => {
+      try {
+        const res = await fetchAddressAndZip(lat, lon);
+        const stamp = Date.now();
+        setData((prev) => ({
+          ...prev,
+          address: res.address,
+          zipcode: res.zipcode,
+        }));
+        setLastUpdated((prev) => ({
+          ...prev,
+          address: stamp,
+          zipcode: stamp,
+        }));
+      } catch (err) {
+        console.error("fetchAddressAndZip failed in triggerFullUpdate", err);
+      }
+    };
+
+    // API 2: 天気・気象・気候 (Open-Meteo)
+    const taskWeather = async () => {
+      try {
+        const res = await fetchWeatherAndMeteorology(lat, lon);
+        const stamp = Date.now();
+        setData((prev) => ({
+          ...prev,
+          weather: res.weather,
+          precipitation: res.precipitation,
+          rainCloudApproach: res.rainCloudApproach,
+          uvIndex: res.uvIndex,
+          sunrise: res.sunrise,
+          sunset: res.sunset,
+          wind: res.wind,
+          humidity: res.humidity,
+          elevation: latestGps.current.elevation !== null ? latestGps.current.elevation : (res.elevation !== null ? res.elevation : prev.elevation),
+        }));
+        
+        const weatherTileIds: TileId[] = [
+          "weather", "precipitation", "rainCloudApproach", "uvIndex",
+          "sunrise", "sunset", "wind", "humidity", "elevation"
+        ];
+        setLastUpdated((prev) => {
+          const next = { ...prev };
+          weatherTileIds.forEach((id) => {
+            next[id] = stamp;
+          });
+          return next;
+        });
+      } catch (err) {
+        console.error("fetchWeatherAndMeteorology failed in triggerFullUpdate", err);
+      }
+    };
+
+    // API 3: 大気・花粉 (Open-Meteo Air Quality)
+    const taskAirQuality = async () => {
+      try {
+        const res = await fetchAirQualityAndPollen(lat, lon);
+        const stamp = Date.now();
+        setData((prev) => ({
+          ...prev,
+          airQuality: res,
+        }));
+        setLastUpdated((prev) => ({
+          ...prev,
+          airQuality: stamp,
+        }));
+      } catch (err) {
+        console.error("fetchAirQualityAndPollen failed in triggerFullUpdate", err);
+      }
+    };
+
+    // API 4: 海水温 (Open-Meteo Marine)
+    const taskSeaTemp = async () => {
+      try {
+        const res = await fetchSeaTemperature(lat, lon);
+        const stamp = Date.now();
+        setData((prev) => ({
+          ...prev,
+          seaTemp: res,
+        }));
+        setLastUpdated((prev) => ({
+          ...prev,
+          seaTemp: stamp,
+        }));
+      } catch (err) {
+        console.error("fetchSeaTemperature failed in triggerFullUpdate", err);
+      }
+    };
+
+    // API 5: 周辺POI (Overpass API)
+    const taskPOI = async () => {
+      try {
+        const res = await fetchPOIFromOverpass(lat, lon);
+        const stamp = Date.now();
+        setData((prev) => ({
+          ...prev,
+          ...res,
+        }));
+        
+        const poiTileIds: TileId[] = [
+          "river", "riverLevel", "roadDensity1", "roadDensity2",
+          "convenience1", "convenience2", "toilet1", "toilet2", "wifi1", "wifi2",
+          "gas1", "gas2", "parking1", "parking2", "roadStation1", "roadStation2",
+          "hotel", "guesthouse", "station1", "station2", "bus1", "bus2",
+          "gourmet1", "gourmet2", "mountain", "attraction1", "attraction2"
+        ];
+        setLastUpdated((prev) => {
+          const next = { ...prev };
+          poiTileIds.forEach((id) => {
+            next[id] = stamp;
+          });
+          return next;
+        });
+      } catch (err) {
+        console.error("fetchPOIFromOverpass failed in triggerFullUpdate", err);
+      }
+    };
+
+    // すべてのAPIリクエストを非同期で開始し、届いた順に個別にアップデート
+    Promise.allSettled([
+      taskAddress(),
+      taskWeather(),
+      taskAirQuality(),
+      taskSeaTemp(),
+      taskPOI()
+    ]).finally(() => {
+      setIsUpdating(false);
+    });
   };
 
   // 方角を16方位の日本語に (堅牢化版)
@@ -345,7 +618,7 @@ export default function App() {
         ...prev,
         gpsAccuracy: latestGps.current.accuracy,
         speed: latestGps.current.speed,
-        elevation: prev.elevation !== null ? prev.elevation : latestGps.current.elevation,
+        elevation: latestGps.current.elevation !== null ? latestGps.current.elevation : prev.elevation,
       }));
       setLastUpdated((prev) => ({
         ...prev,
@@ -427,7 +700,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <h1 className="text-lg sm:text-xl font-black text-white tracking-wider flex items-center gap-1.5">
-              旅のお供 <span className="text-xs font-normal opacity-70">ver68</span>
+              旅のお供 <span className="text-xs font-normal opacity-70">ver69</span>
             </h1>
             <span className="hidden md:inline-block text-xs text-slate-400 border-l border-white/20 pl-2 max-w-[200px] truncate">
               📍 {data.address || "現在地を取得中..."}
@@ -459,8 +732,8 @@ export default function App() {
 
       {/* メインタイグリッド */}
       <main className="flex-grow w-full px-1 py-1 flex flex-col justify-start">
-        {/* レスポンシブに必ず1列に3タイル（grid-cols-3）を表示し、隙間は最小限（gap-1） */}
-        <div className="grid grid-cols-3 gap-1 w-full">
+        {/* レスポンシブに必ず1列に4タイル（grid-cols-4）を表示し、隙間は最小限（gap-1） */}
+        <div className="grid grid-cols-4 gap-1 w-full">
           {ALL_TILES_CONFIG.map((config) => (
             <CompanionTile
               key={config.id}
@@ -475,7 +748,7 @@ export default function App() {
 
       {/* フッター */}
       <footer className="w-full bg-black/40 border-t border-white/5 py-3 text-center text-[10px] text-slate-500 select-none">
-        旅のお供 ver68 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
+        旅のお供 ver69 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
       </footer>
     </div>
   );
