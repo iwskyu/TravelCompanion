@@ -14,6 +14,7 @@ interface CompanionTileProps {
   deviceHeading: number | null;
   lastUpdatedTime: number; // 最終更新のタイムスタンプ
   onClick?: () => void; // タップ/クリックで即情報更新するイベントハンドラー
+  isCached?: boolean; // キャッシュ判別フラグ（フェッチ失敗時に薄グレーアウト表示にする）
 }
 
 export function CompanionTile({
@@ -22,6 +23,7 @@ export function CompanionTile({
   deviceHeading,
   lastUpdatedTime,
   onClick,
+  isCached = false,
 }: CompanionTileProps) {
   const [isFlashing, setIsFlashing] = useState(false);
 
@@ -124,6 +126,9 @@ export function CompanionTile({
   if (config.id === "dbLevel") {
     // 周囲の静かさの値はフォントサイズを明確に小さくする
     fontSizeClass = "text-[11px] sm:text-[12px] md:text-[13px] font-bold leading-snug";
+  } else if (config.id === "earthquake") {
+    // 地震・防災情報の値の文字は小さくして直感的かつ詳細に読めるようにする
+    fontSizeClass = "text-[9px] sm:text-[10px] md:text-[11.5px] font-medium leading-relaxed text-left tracking-wide px-0.5 self-start overflow-y-auto max-h-[46px]";
   }
 
   // 枠のグラデーション色を取得
@@ -156,6 +161,19 @@ export function CompanionTile({
 
   const isMovingFast = config.id === "bearing" && data.speed !== null && data.speed !== undefined && (data.speed * 3.6) > 30;
 
+  // 地震・防災情報の警報レベル判定 (赤点滅演出)
+  const isEarthquake = config.id === "earthquake";
+  const isEarthquakeDanger = isEarthquake && valueString && (
+    valueString.includes("緊急") ||
+    valueString.includes("震度5") ||
+    valueString.includes("震度6") ||
+    valueString.includes("震度7") ||
+    valueString.includes("大津波") ||
+    valueString.includes("津波") ||
+    valueString.includes("特別警報") ||
+    valueString.includes("警報")
+  );
+
   const gradientColors = getGradientColors(config.borderColorClass);
   let gradientClass = isFlashing
     ? "from-yellow-400 to-amber-500"
@@ -163,6 +181,10 @@ export function CompanionTile({
 
   if (isMovingFast) {
     gradientClass = "from-red-500 to-rose-600 animate-[pulse_1.5s_infinite]";
+  } else if (isEarthquakeDanger) {
+    gradientClass = "from-red-600 via-rose-500 to-red-700 animate-[pulse_1s_infinite]";
+  } else if (isCached) {
+    gradientClass = "from-slate-700/40 to-slate-800/40";
   }
 
   return (
@@ -179,17 +201,31 @@ export function CompanionTile({
         className={`w-full h-full flex flex-col justify-center px-2 py-1 rounded-[11px] overflow-hidden ${
           isMovingFast
             ? "bg-red-950/95"
-            : isFlashing
-              ? "bg-yellow-500/10"
-              : "bg-slate-900/85 hover:bg-slate-800/85"
+            : isEarthquakeDanger
+              ? "bg-red-950/95 border border-red-500/30 animate-[pulse_2s_infinite]"
+              : isFlashing
+                ? "bg-yellow-500/10"
+                : isCached
+                  ? "bg-slate-950/90 text-slate-400 opacity-60 saturate-50"
+                  : "bg-slate-900/85 hover:bg-slate-800/85"
         } transition-all duration-300`}
       >
         {/* 項目名（小さく表示） */}
         <div className="text-[10px] sm:text-[11px] text-gray-300 font-normal opacity-85 leading-tight mb-0.5 whitespace-normal break-all flex items-center justify-between">
-          <span>{config.emoji} {config.label}</span>
+          <span className="truncate pr-1">{config.emoji} {config.label}</span>
           {isMovingFast && (
             <span className="text-[9px] font-black text-red-300 bg-red-900/50 px-1 rounded animate-pulse whitespace-nowrap border border-red-500/30">
               ⚠️移動中
+            </span>
+          )}
+          {isEarthquakeDanger && (
+            <span className="text-[8px] font-black text-red-100 bg-red-600 px-1 rounded animate-pulse whitespace-nowrap">
+              🚨警報発令
+            </span>
+          )}
+          {isCached && !isMovingFast && !isEarthquakeDanger && (
+            <span className="text-[8px] font-medium text-slate-400 bg-slate-800/80 px-1 rounded border border-slate-700 whitespace-nowrap">
+              キャッシュ
             </span>
           )}
         </div>

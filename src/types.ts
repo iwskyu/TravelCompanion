@@ -10,7 +10,6 @@ export interface CompanionData {
   bearing: { angle: number; direction: string } | null;
   gpsAccuracy: number | null;
   speed: number | null;
-  elevation: number | null;
 
   tokyoDistance: number | null;
   tokyoBearing: number | null;
@@ -29,7 +28,7 @@ export interface CompanionData {
   wind: { speed: number; bearing: number; direction: string } | null;
   humidity: number | null;
 
-  airQuality: { pollenText: string; pm25: number | null } | null;
+  airQuality: { pollenText: string; pm25: number | null; kosaText: string } | null;
   seaTemp: number | null;
   highTide: string | null;
   lowTide: string | null;
@@ -38,9 +37,6 @@ export interface CompanionData {
 
   river: { name: string; distance: number } | null;
   riverLevel: { name: string; level: string; danger: string } | null;
-
-  roadDensity1: { roadName: string; info: string; distance: number } | null;
-  roadDensity2: { roadName: string; info: string; distance: number } | null;
 
   convenience1: { name: string; distance: number; bearing: number } | null;
   convenience2: { name: string; distance: number; bearing: number } | null;
@@ -54,6 +50,7 @@ export interface CompanionData {
   parking2: { name: string; distance: number; bearing: number } | null;
   roadStation1: { name: string; distance: number; bearing: number } | null;
   roadStation2: { name: string; distance: number; bearing: number } | null;
+  onsen: { name: string; distance: number; bearing: number } | null;
   hotel: { name: string; distance: number } | null;
   guesthouse: { name: string; distance: number } | null;
 
@@ -81,7 +78,6 @@ export interface CompanionData {
   gsiElevation?: number | null;
   magicHour?: string | null;
   earthquake?: string | null;
-  magneticDeclination?: number | null;
   powerUsage?: { company: string; rate: number; usage: number; capacity: number } | null;
   trafficStatus?: string | null;
 }

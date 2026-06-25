@@ -112,6 +112,36 @@ export default function App() {
   const [isUpdating, setIsUpdating] = useState(false);
   const isPausedRef = useRef<boolean>(false);
 
+  // タイルごとのキャッシュ判別（フェッチ失敗等で古い/キャッシュであることを示すフラグ）
+  const [cachedTiles, setCachedTiles] = useState<Record<TileId, boolean>>({});
+
+  // タイルの順序（ドラッグ＆ドロップによる並べ替え対応）
+  const [tileOrder, setTileOrder] = useState<TileId[]>(() => ALL_TILES_CONFIG.map((c) => c.id));
+
+  // ドラッグ＆ドロップ用のインデックス参照
+  const draggedIndex = useRef<number | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    draggedIndex.current = index;
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedIndex.current === null || draggedIndex.current === index) return;
+
+    const newOrder = [...tileOrder];
+    const draggedItem = newOrder[draggedIndex.current];
+    newOrder.splice(draggedIndex.current, 1);
+    newOrder.splice(index, 0, draggedItem);
+    draggedIndex.current = index;
+    setTileOrder(newOrder);
+  };
+
+  const handleDragEnd = () => {
+    draggedIndex.current = null;
+  };
+
   const mainRef = useRef<HTMLElement | null>(null);
 
   const handleScrollToContent = () => {
@@ -197,8 +227,13 @@ export default function App() {
     if (coords) {
       currentCoords.current = coords;
     } else {
-      // 緯度経度デフォルト
-      currentCoords.current = { lat: 35.6895, lon: 139.6917 };
+      // GPSが取得できなかった場合は都庁にせず、座標をnull（未取得）にする
+      currentCoords.current = null;
+      setData((prev) => ({
+        ...prev,
+        address: "-",
+        zipcode: null,
+      }));
     }
 
     // マイクアナライザーの初期化
@@ -257,7 +292,16 @@ export default function App() {
 
   // 2. 差分/一括更新。引数で特定のタイルグループを指定
   const updateTileData = async (tileIds: TileId[]) => {
-    if (!currentCoords.current) return;
+    if (!currentCoords.current) {
+      setCachedTiles((prev) => {
+        const next = { ...prev };
+        tileIds.forEach((id) => {
+          next[id] = true;
+        });
+        return next;
+      });
+      return;
+    }
     const { lat, lon } = currentCoords.current;
     const nowStamp = Date.now();
     const now = new Date();
@@ -486,7 +530,20 @@ export default function App() {
       }
     }
 
-    const { lat, lon } = currentCoords.current || { lat: 35.6895, lon: 139.6917 };
+    if (!currentCoords.current) {
+      // GPSが取得できなかった場合は、すべてのタイルをキャッシュ/未取得グレーアウトにして即終了する
+      setCachedTiles((prev) => {
+        const next = { ...prev };
+        ALL_TILES_CONFIG.forEach((config) => {
+          next[config.id] = true;
+        });
+        return next;
+      });
+      setIsUpdating(false);
+      return;
+    }
+
+    const { lat, lon } = currentCoords.current;
     const nowStamp = Date.now();
     const now = new Date();
     const dateStr = now.toDateString();
@@ -631,13 +688,26 @@ export default function App() {
           address: stamp,
           zipcode: stamp,
         }));
+        setCachedTiles((prev) => ({
+          ...prev,
+          address: false,
+          zipcode: false,
+        }));
       } catch (err) {
         console.error("fetchAddressAndZip failed in triggerFullUpdate", err);
+        setCachedTiles((prev) => ({
+          ...prev,
+          address: true,
+          zipcode: true,
+        }));
       }
     };
 
     // API 2: 天気・気象・気候 (Open-Meteo & 国土地理院 & マジックアワー)
     const taskWeather = async () => {
+      const weatherTileIds: TileId[] = [
+        "weather", "precipitation", "rainCloudApproach", "uvIndex", "wind", "humidity", "magicHour", "sunriseSunset"
+      ];
       try {
         const [res, gsiElev] = await Promise.all([
           fetchWeatherAndMeteorology(lat, lon),
@@ -665,36 +735,46 @@ export default function App() {
           sunset: finalSunset,
           wind: res.wind,
           humidity: res.humidity,
-          elevation: !moved && prev.elevation !== null ? prev.elevation : (finalElevation !== null ? finalElevation : prev.elevation),
           gsiElevation: gsiElev !== null ? gsiElev : (prev.gsiElevation !== null ? prev.gsiElevation : finalElevation),
           magicHour: magicHourVal,
         }));
         
-        const weatherTileIds: TileId[] = [
-          "weather", "precipitation", "rainCloudApproach", "uvIndex", "wind", "humidity", "magicHour"
-        ];
-        
-        if (!isSameDay || !data.sunrise) {
-          weatherTileIds.push("sunrise", "sunset", "sunriseSunset");
-        }
-        if (moved || data.elevation === null) {
-          weatherTileIds.push("elevation", "gsiElevation");
+        const activeTileIds = [...weatherTileIds];
+        if (moved || data.gsiElevation === null) {
+          activeTileIds.push("gsiElevation");
         }
 
         setLastUpdated((prev) => {
           const next = { ...prev };
-          weatherTileIds.forEach((id) => {
+          activeTileIds.forEach((id) => {
             next[id] = stamp;
+          });
+          return next;
+        });
+
+        setCachedTiles((prev) => {
+          const next = { ...prev };
+          activeTileIds.forEach((id) => {
+            next[id] = false;
           });
           return next;
         });
       } catch (err) {
         console.error("fetchWeatherAndMeteorology failed in triggerFullUpdate", err);
+        setCachedTiles((prev) => {
+          const next = { ...prev };
+          weatherTileIds.forEach((id) => {
+            next[id] = true;
+          });
+          next["gsiElevation"] = true;
+          return next;
+        });
       }
     };
 
-    // API 3: 大気・花粉 (Open-Meteo Air Quality)
+    // API 3: 大気・花粉 (Open-Meteo Air Quality & 黄砂)
     const taskAirQuality = async () => {
+      const airQualityKeys: TileId[] = ["airQuality", "pm25", "kosa"];
       try {
         const res = await fetchAirQualityAndPollen(lat, lon);
         const stamp = Date.now();
@@ -702,18 +782,29 @@ export default function App() {
           ...prev,
           airQuality: res,
         }));
-        setLastUpdated((prev) => ({
-          ...prev,
-          airQuality: stamp,
-        }));
+        setLastUpdated((prev) => {
+          const next = { ...prev };
+          airQualityKeys.forEach((id) => { next[id] = stamp; });
+          return next;
+        });
+        setCachedTiles((prev) => {
+          const next = { ...prev };
+          airQualityKeys.forEach((id) => { next[id] = false; });
+          return next;
+        });
       } catch (err) {
         console.error("fetchAirQualityAndPollen failed in triggerFullUpdate", err);
+        setCachedTiles((prev) => {
+          const next = { ...prev };
+          airQualityKeys.forEach((id) => { next[id] = true; });
+          return next;
+        });
       }
     };
 
-    // API 4: 海水温・波情報 (Open-Meteo Marine)
-    // 大きく移動していなければフェッチをスキップ
+    // API 4: 海水温・波情報 (Open-Meteo Marine & 満潮干潮)
     const taskSeaTemp = async () => {
+      const marineKeys: TileId[] = ["seaTemp", "waveInfo", "highLowTide"];
       if (!moved && data.seaTemp) {
         console.log("Battery Save: Skip Marine API because position hasn't changed significantly.");
         return;
@@ -726,18 +817,35 @@ export default function App() {
           seaTemp: res.seaTemp,
           waveInfo: res.waveInfo,
         }));
-        setLastUpdated((prev) => ({
-          ...prev,
-          seaTemp: stamp,
-          waveInfo: stamp,
-        }));
+        setLastUpdated((prev) => {
+          const next = { ...prev };
+          marineKeys.forEach((id) => { next[id] = stamp; });
+          return next;
+        });
+        setCachedTiles((prev) => {
+          const next = { ...prev };
+          marineKeys.forEach((id) => { next[id] = false; });
+          return next;
+        });
       } catch (err) {
         console.error("fetchSeaTemperature failed in triggerFullUpdate", err);
+        setCachedTiles((prev) => {
+          const next = { ...prev };
+          marineKeys.forEach((id) => { next[id] = true; });
+          return next;
+        });
       }
     };
 
     // API 5: 周辺POI (Overpass API & 道路交通状況)
     const taskPOI = async () => {
+      const poiTileIds: TileId[] = [
+        "river", "riverLevel", "trafficStatus",
+        "convenience1", "convenience2", "toilet1", "toilet2", "wifi1", "wifi2",
+        "gas1", "gas2", "parking1", "parking2", "roadStation1", "onsen",
+        "hotel", "guesthouse", "station1", "station2", "bus1", "bus2",
+        "gourmet1", "gourmet2", "mountain", "attraction1", "attraction2", "intersection"
+      ];
       if (!moved && data.river) {
         console.log("Battery Save: Skip Overpass API because position hasn't changed significantly.");
         return;
@@ -754,13 +862,6 @@ export default function App() {
           trafficStatus: traffic,
         }));
         
-        const poiTileIds: TileId[] = [
-          "river", "riverLevel", "roadDensity1", "roadDensity2", "trafficStatus",
-          "convenience1", "convenience2", "toilet1", "toilet2", "wifi1", "wifi2",
-          "gas1", "gas2", "parking1", "parking2", "roadStation1", "roadStation2",
-          "hotel", "guesthouse", "station1", "station2", "bus1", "bus2",
-          "gourmet1", "gourmet2", "mountain", "attraction1", "attraction2", "intersection"
-        ];
         setLastUpdated((prev) => {
           const next = { ...prev };
           poiTileIds.forEach((id) => {
@@ -768,8 +869,22 @@ export default function App() {
           });
           return next;
         });
+        setCachedTiles((prev) => {
+          const next = { ...prev };
+          poiTileIds.forEach((id) => {
+            next[id] = false;
+          });
+          return next;
+        });
       } catch (err) {
         console.error("fetchPOIFromOverpass failed in triggerFullUpdate", err);
+        setCachedTiles((prev) => {
+          const next = { ...prev };
+          poiTileIds.forEach((id) => {
+            next[id] = true;
+          });
+          return next;
+        });
       }
     };
 
@@ -786,8 +901,16 @@ export default function App() {
           ...prev,
           earthquake: stamp,
         }));
+        setCachedTiles((prev) => ({
+          ...prev,
+          earthquake: false,
+        }));
       } catch (err) {
         console.error("fetchEarthquakeInfo failed in triggerFullUpdate", err);
+        setCachedTiles((prev) => ({
+          ...prev,
+          earthquake: true,
+        }));
       }
     };
 
@@ -804,26 +927,16 @@ export default function App() {
           ...prev,
           powerUsage: stamp,
         }));
+        setCachedTiles((prev) => ({
+          ...prev,
+          powerUsage: false,
+        }));
       } catch (err) {
         console.error("calculatePowerUsage failed in triggerFullUpdate", err);
-      }
-    };
-
-    // API 8: 磁気偏角
-    const taskMagneticDeclination = async () => {
-      try {
-        const res = calculateMagneticDeclination(lat, lon);
-        const stamp = Date.now();
-        setData((prev) => ({
+        setCachedTiles((prev) => ({
           ...prev,
-          magneticDeclination: res,
+          powerUsage: true,
         }));
-        setLastUpdated((prev) => ({
-          ...prev,
-          magneticDeclination: stamp,
-        }));
-      } catch (err) {
-        console.error("calculateMagneticDeclination failed in triggerFullUpdate", err);
       }
     };
 
@@ -835,8 +948,7 @@ export default function App() {
       taskSeaTemp(),
       taskPOI(),
       taskEarthquake(),
-      taskPowerUsage(),
-      taskMagneticDeclination()
+      taskPowerUsage()
     ]).finally(() => {
       setIsUpdating(false);
       lastUpdatedCoords.current = { lat, lon };
@@ -863,14 +975,19 @@ export default function App() {
       );
     }
 
-    const { lat, lon } = currentCoords.current || { lat: 35.6895, lon: 139.6917 };
+    if (!currentCoords.current) {
+      setCachedTiles((prev) => ({ ...prev, [tileId]: true }));
+      return;
+    }
+
+    const { lat, lon } = currentCoords.current;
 
     // どのデータを更新するかキーによって分類してフェッチ
-    const weatherKeys = ["weather", "precipitation", "rainCloudApproach", "uvIndex", "wind", "humidity", "elevation", "gsiElevation", "magicHour"];
-    const poiKeys = [
-      "river", "riverLevel", "roadDensity1", "roadDensity2", "trafficStatus",
+    const weatherKeys: TileId[] = ["weather", "precipitation", "rainCloudApproach", "uvIndex", "wind", "humidity", "gsiElevation", "magicHour"];
+    const poiKeys: TileId[] = [
+      "river", "riverLevel", "trafficStatus",
       "convenience1", "convenience2", "toilet1", "toilet2", "wifi1", "wifi2",
-      "gas1", "gas2", "parking1", "parking2", "roadStation1", "roadStation2",
+      "gas1", "gas2", "parking1", "parking2", "roadStation1", "onsen",
       "hotel", "guesthouse", "station1", "station2", "bus1", "bus2",
       "gourmet1", "gourmet2", "mountain", "attraction1", "attraction2", "intersection"
     ];
@@ -881,8 +998,10 @@ export default function App() {
         setData((prev) => ({ ...prev, address: res.address, zipcode: res.zipcode }));
         const updatedStamp = Date.now();
         setLastUpdated((prev) => ({ ...prev, address: updatedStamp, zipcode: updatedStamp }));
+        setCachedTiles((prev) => ({ ...prev, address: false, zipcode: false }));
       } catch (e) {
         console.error("Single tile update Nominatim error:", e);
+        setCachedTiles((prev) => ({ ...prev, address: true, zipcode: true }));
       }
     } else if (weatherKeys.includes(tileId)) {
       try {
@@ -907,7 +1026,6 @@ export default function App() {
           uvIndex: res.uvIndex,
           wind: res.wind,
           humidity: res.humidity,
-          elevation: finalElevation !== null ? finalElevation : prev.elevation,
           gsiElevation: gsiElev !== null ? gsiElev : (prev.gsiElevation !== null ? prev.gsiElevation : finalElevation),
           magicHour: magicHourVal,
         }));
@@ -917,24 +1035,66 @@ export default function App() {
           weatherKeys.forEach(k => { next[k] = updatedStamp; });
           return next;
         });
+        setCachedTiles((prev) => {
+          const next = { ...prev };
+          weatherKeys.forEach(k => { next[k] = false; });
+          return next;
+        });
       } catch (e) {
         console.error("Single tile update Weather error:", e);
+        setCachedTiles((prev) => {
+          const next = { ...prev };
+          weatherKeys.forEach(k => { next[k] = true; });
+          return next;
+        });
       }
-    } else if (tileId === "airQuality") {
+    } else if (tileId === "airQuality" || tileId === "pm25" || tileId === "kosa") {
+      const aqKeys: TileId[] = ["airQuality", "pm25", "kosa"];
       try {
         const res = await fetchAirQualityAndPollen(lat, lon);
         setData((prev) => ({ ...prev, airQuality: res }));
-        setLastUpdated((prev) => ({ ...prev, airQuality: Date.now() }));
+        const updatedStamp = Date.now();
+        setLastUpdated((prev) => {
+          const next = { ...prev };
+          aqKeys.forEach(k => { next[k] = updatedStamp; });
+          return next;
+        });
+        setCachedTiles((prev) => {
+          const next = { ...prev };
+          aqKeys.forEach(k => { next[k] = false; });
+          return next;
+        });
       } catch (e) {
         console.error("Single tile update AirQuality error:", e);
+        setCachedTiles((prev) => {
+          const next = { ...prev };
+          aqKeys.forEach(k => { next[k] = true; });
+          return next;
+        });
       }
-    } else if (tileId === "seaTemp") {
+    } else if (tileId === "seaTemp" || tileId === "waveInfo" || tileId === "highLowTide") {
+      const seaKeys: TileId[] = ["seaTemp", "waveInfo", "highLowTide"];
       try {
         const res = await fetchSeaTemperature(lat, lon);
-        setData((prev) => ({ ...prev, seaTemp: res }));
-        setLastUpdated((prev) => ({ ...prev, seaTemp: Date.now() }));
+        setData((prev) => ({ ...prev, seaTemp: res.seaTemp, waveInfo: res.waveInfo }));
+        const updatedStamp = Date.now();
+        setLastUpdated((prev) => {
+          const next = { ...prev };
+          seaKeys.forEach(k => { next[k] = updatedStamp; });
+          return next;
+        });
+        setCachedTiles((prev) => {
+          const next = { ...prev };
+          seaKeys.forEach(k => { next[k] = false; });
+          return next;
+        });
       } catch (e) {
         console.error("Single tile update SeaTemp error:", e);
+        setCachedTiles((prev) => {
+          const next = { ...prev };
+          seaKeys.forEach(k => { next[k] = true; });
+          return next;
+        });
       }
     } else if (poiKeys.includes(tileId)) {
       try {
@@ -952,32 +1112,38 @@ export default function App() {
           poiKeys.forEach(k => { next[k] = updatedStamp; });
           return next;
         });
+        setCachedTiles((prev) => {
+          const next = { ...prev };
+          poiKeys.forEach(k => { next[k] = false; });
+          return next;
+        });
       } catch (e) {
         console.error("Single tile update POI error:", e);
+        setCachedTiles((prev) => {
+          const next = { ...prev };
+          poiKeys.forEach(k => { next[k] = true; });
+          return next;
+        });
       }
     } else if (tileId === "earthquake") {
       try {
         const res = await fetchEarthquakeInfo();
         setData((prev) => ({ ...prev, earthquake: res }));
         setLastUpdated((prev) => ({ ...prev, earthquake: Date.now() }));
+        setCachedTiles((prev) => ({ ...prev, earthquake: false }));
       } catch (e) {
         console.error("Single tile update Earthquake error:", e);
+        setCachedTiles((prev) => ({ ...prev, earthquake: true }));
       }
     } else if (tileId === "powerUsage") {
       try {
         const res = calculatePowerUsage(lat, lon);
         setData((prev) => ({ ...prev, powerUsage: res }));
         setLastUpdated((prev) => ({ ...prev, powerUsage: Date.now() }));
+        setCachedTiles((prev) => ({ ...prev, powerUsage: false }));
       } catch (e) {
         console.error("Single tile update PowerUsage error:", e);
-      }
-    } else if (tileId === "magneticDeclination") {
-      try {
-        const res = calculateMagneticDeclination(lat, lon);
-        setData((prev) => ({ ...prev, magneticDeclination: res }));
-        setLastUpdated((prev) => ({ ...prev, magneticDeclination: Date.now() }));
-      } catch (e) {
-        console.error("Single tile update MagneticDeclination error:", e);
+        setCachedTiles((prev) => ({ ...prev, powerUsage: true }));
       }
     } else {
       // センサーやローカル計算系は一瞬で現在データから再生成
@@ -1010,6 +1176,10 @@ export default function App() {
       setLastUpdated((prev) => ({
         ...prev,
         [tileId]: Date.now(),
+      }));
+      setCachedTiles((prev) => ({
+        ...prev,
+        [tileId]: false,
       }));
     }
   };
@@ -1120,17 +1290,17 @@ export default function App() {
     }, 3 * 60 * 1000);
 
     // --- 10分毎更新 ---
-    // POI（コンビニ、トイレ、駅、バス、Wi-Fi、GS、駐車場、道の駅、ホテル、グルメ、観光地、川、道路）、日の出・日没、大気汚染、満潮・干潮
+    // POI（コンビニ、トイレ、駅、バス、Wi-Fi、GS、駐車場、道の駅、ホテル、グルメ、観光地、川、道路）、日の出・日没、大気汚染、満潮・干潮、黄砂、温泉
     const interval10m = setInterval(() => {
       if (isPausedRef.current) return;
       const list10m: TileId[] = [
         "tokyoDistance", "seaDistance", "fujiDistance", "prefecturalCapital",
         "wind", "humidity", "airQuality", "seaTemp", "highLowTide", "sunPosition",
-        "river", "riverLevel", "roadDensity1", "roadDensity2",
+        "river", "riverLevel",
         "convenience1", "convenience2", "toilet1", "toilet2", "wifi1", "wifi2",
-        "gas1", "gas2", "parking1", "parking2", "roadStation1", "roadStation2",
+        "gas1", "gas2", "parking1", "parking2", "roadStation1", "onsen",
         "hotel", "guesthouse", "station1", "station2", "bus1", "bus2",
-        "gourmet1", "gourmet2", "mountain", "attraction1", "attraction2", "intersection"
+        "gourmet1", "gourmet2", "mountain", "attraction1", "attraction2", "intersection", "kosa"
       ];
       updateTileData(list10m);
     }, 10 * 60 * 1000);
@@ -1233,18 +1403,31 @@ export default function App() {
 
       {/* メインタイグリッド */}
       <main className="flex-grow w-full px-1 py-1 flex flex-col justify-start">
-        {/* レスポンシブに必ず1列に4タイル（grid-cols-4）を表示し、隙間は最小限（gap-1） */}
-        <div className="grid grid-cols-4 gap-1 w-full">
-          {ALL_TILES_CONFIG.map((config) => (
-            <CompanionTile
-              key={config.id}
-              config={config}
-              data={data}
-              deviceHeading={deviceHeading}
-              lastUpdatedTime={lastUpdated[config.id] || 0}
-              onClick={() => handleTileClick(config.id)}
-            />
-          ))}
+        {/* スマートフォンの画面サイズに応じて3列または4列に切り替わるようにレスポンシブなグリッド設定に変更 */}
+        <div className="grid grid-cols-3 sm:grid-cols-4 gap-1 w-full">
+          {tileOrder.map((tileId, idx) => {
+            const config = ALL_TILES_CONFIG.find((c) => c.id === tileId);
+            if (!config) return null;
+            return (
+              <div
+                key={config.id}
+                draggable
+                onDragStart={(e) => handleDragStart(e, idx)}
+                onDragOver={(e) => handleDragOver(e, idx)}
+                onDragEnd={handleDragEnd}
+                className="cursor-move select-none active:scale-95 transition-transform"
+              >
+                <CompanionTile
+                  config={config}
+                  data={data}
+                  deviceHeading={deviceHeading}
+                  lastUpdatedTime={lastUpdated[config.id] || 0}
+                  isCached={!!cachedTiles[config.id]}
+                  onClick={() => handleTileClick(config.id)}
+                />
+              </div>
+            );
+          })}
         </div>
       </main>
 

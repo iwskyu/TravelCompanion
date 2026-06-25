@@ -276,7 +276,7 @@ export async function fetchWeatherAndMeteorology(
 export async function fetchAirQualityAndPollen(
   lat: number,
   lon: number
-): Promise<{ pollenText: string; pm25: number | null }> {
+): Promise<{ pollenText: string; pm25: number | null; kosaText: string }> {
   const now = Date.now();
   if (cache.airQuality) {
     const timeDiff = now - cache.airQuality.timestamp;
@@ -298,13 +298,14 @@ export async function fetchAirQualityAndPollen(
 
   const runFetch = async () => {
     try {
-      const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,alder_pollen,birch_pollen,grass_pollen,mugwort_pollen,ragweed_pollen`;
+      const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,dust,alder_pollen,birch_pollen,grass_pollen,mugwort_pollen,ragweed_pollen`;
       const res = await fetch(url);
       if (!res.ok) throw new Error("Air Quality API failed");
       const json = await res.json();
       const current = json.current;
 
       const pm25 = current?.pm2_5 !== undefined ? current.pm2_5 : null;
+      const dust = current?.dust !== undefined ? current.dust : null;
 
       const totalPollen = (
         (current?.alder_pollen || 0) +
@@ -319,8 +320,23 @@ export async function fetchAirQualityAndPollen(
       else if (totalPollen > 50) pollenText = "多い";
       else if (totalPollen > 15) pollenText = "やや多い";
 
+      // 黄砂 (kosaText) の評価
+      let kosaText = "少ない";
+      if (dust !== null) {
+        if (dust > 150) kosaText = "非常に多い";
+        else if (dust > 80) kosaText = "多い";
+        else if (dust > 30) kosaText = "やや多い";
+      } else {
+        const month = new Date().getMonth() + 1;
+        if (month >= 3 && month <= 5) {
+          kosaText = "やや多い";
+        } else {
+          kosaText = "極小";
+        }
+      }
+
       const pm25Val = pm25 !== null ? pm25 : (totalPollen > 0 ? Math.round(totalPollen * 0.1) : 12);
-      const result = { pollenText, pm25: pm25Val };
+      const result = { pollenText, pm25: pm25Val, kosaText };
       cache.airQuality = { lat, lon, timestamp: Date.now(), data: result };
       return result;
     } catch (e) {
@@ -328,7 +344,7 @@ export async function fetchAirQualityAndPollen(
       if (cache.airQuality) {
         return cache.airQuality.data;
       }
-      return { pollenText: "-", pm25: null };
+      return { pollenText: "-", pm25: null, kosaText: "-" };
     } finally {
       delete pendingPromises.airQuality;
     }
@@ -460,6 +476,7 @@ export function generateFallbackPOI(lat: number, lon: number): Partial<Companion
     parking2: null,
     roadStation1: { name: "該当なし(5km)", distance: null, bearing: null },
     roadStation2: null,
+    onsen: { name: "該当なし(5km)", distance: null, bearing: null },
     hotel: { name: "該当なし(5km)", distance: null },
     guesthouse: { name: "該当なし(5km)", distance: null },
     station1: { line: "-", name: "該当なし(5km)", distance: null, bearing: null },
@@ -473,8 +490,6 @@ export function generateFallbackPOI(lat: number, lon: number): Partial<Companion
     mountain: { name: "該当なし(5km)", elevation: null, distance: null },
     river: { name: "該当なし(5km)", distance: null },
     riverLevel: { name: "該当なし(5km)", level: "-", danger: "平穏" },
-    roadDensity1: { roadName: "該当なし(5km)", info: "順調", distance: null },
-    roadDensity2: null,
     intersection: { name: "該当なし(5km)", distance: null, bearing: null },
     seaDistance: seaDist,
     seaBearing: seaBear,
@@ -542,6 +557,7 @@ async function fetchPOIFromOverpassRaw(
         node["amenity"="fuel"](around:10000,${lat},${lon});
         node["amenity"="parking"](around:5000,${lat},${lon});
         node["highway"~"rest_area|services"](around:15000,${lat},${lon});
+        node["amenity"="public_bath"](around:10000,${lat},${lon});
         node["tourism"="hotel"](around:10000,${lat},${lon});
         node["tourism"~"hostel|guest_house"](around:10000,${lat},${lon});
         node["railway"="station"](around:10000,${lat},${lon});
@@ -612,6 +628,7 @@ async function fetchPOIFromOverpassRaw(
     const fuels: any[] = [];
     const parkings: any[] = [];
     const restAreas: any[] = [];
+    const onsens: any[] = [];
     const hotels: any[] = [];
     const hostels: any[] = [];
     const stations: any[] = [];
@@ -653,6 +670,9 @@ async function fetchPOIFromOverpassRaw(
       }
       if (tags.highway === "rest_area" || tags.highway === "services" || tags.highway === "road_side_station" || name.includes("道の駅")) {
         restAreas.push(poi);
+      }
+      if (tags.amenity === "public_bath" || tags.natural === "hot_spring" || name.includes("温泉") || name.includes("の湯") || name.includes("健康ランド") || tags.bath === "yes") {
+        onsens.push(poi);
       }
       if (tags.tourism === "hotel") {
         hotels.push(poi);
@@ -697,6 +717,7 @@ async function fetchPOIFromOverpassRaw(
     sortByDistance(fuels);
     sortByDistance(parkings);
     sortByDistance(restAreas);
+    sortByDistance(onsens);
     sortByDistance(hotels);
     sortByDistance(hostels);
     sortByDistance(stations);
@@ -762,22 +783,6 @@ async function fetchPOIFromOverpassRaw(
       };
     }
 
-    const getRoadDensity = (road: any) => {
-      if (!road) return null;
-      const hours = new Date().getHours();
-      let info = "順調";
-      if (hours >= 7 && hours <= 9) info = "混雑";
-      else if (hours >= 17 && hours <= 19) info = "混雑";
-      else if (hours >= 11 && hours <= 15) info = "交通量多め";
-      else if (hours >= 0 && hours <= 5) info = "閑散";
-      
-      return {
-        roadName: road.name !== "-" ? road.name : (road.tags.highway || "主要道路"),
-        info,
-        distance: road.distance,
-      };
-    };
-
     let intersectionData = null;
     if (inter1) {
       let name = inter1.name;
@@ -786,7 +791,7 @@ async function fetchPOIFromOverpassRaw(
           : inter1.tags.highway === "crossing" ? "横断歩道交差" 
           : inter1.tags.highway === "mini_roundabout" ? "ロータリー" 
           : "交差点";
-        const nearbyRoad = road1?.roadName && road1.roadName !== "-" ? road1.roadName : "";
+        const nearbyRoad = road1?.name && road1.name !== "-" ? road1.name : "";
         name = nearbyRoad ? `${nearbyRoad}付近の${typeLabel}` : `周辺の${typeLabel}`;
       }
       intersectionData = {
@@ -831,6 +836,7 @@ async function fetchPOIFromOverpassRaw(
       parking2: parking2 ? { name: parking2.name, distance: parking2.distance, bearing: parking2.bearing } : fallback.parking2,
       roadStation1: rest1 ? { name: rest1.name, distance: rest1.distance, bearing: rest1.bearing } : fallback.roadStation1,
       roadStation2: rest2 ? { name: rest2.name, distance: rest2.distance, bearing: rest2.bearing } : fallback.roadStation2,
+      onsen: onsens[0] ? { name: onsens[0].name, distance: onsens[0].distance, bearing: onsens[0].bearing } : fallback.onsen,
       hotel: hotel ? { name: hotel.name, distance: hotel.distance } : fallback.hotel,
       guesthouse: hostel ? { name: hostel.name, distance: hostel.distance } : fallback.guesthouse,
       station1: mapStation(st1) || fallback.station1,
@@ -844,8 +850,6 @@ async function fetchPOIFromOverpassRaw(
       mountain: mountain ? { name: mountain.name, elevation: mountain.tags.ele ? parseInt(mountain.tags.ele) : 500, distance: mountain.distance } : fallback.mountain,
       river: river ? { name: river.name, distance: river.distance } : fallback.river,
       riverLevel: riverLevel || fallback.riverLevel,
-      roadDensity1: getRoadDensity(road1) || fallback.roadDensity1,
-      roadDensity2: getRoadDensity(road2) || fallback.roadDensity2,
       intersection: intersectionData || fallback.intersection,
       seaDistance: seaDist || fallback.seaDistance,
       seaBearing: seaBear || fallback.seaBearing,
@@ -1075,7 +1079,7 @@ export async function fetchAllCompanionData(
   speedKmh: number = 0,
   gpsAltitude: number | null = null
 ): Promise<Partial<CompanionData>> {
-  // 6つの主要な並列フェッチ
+  // 7つの主要な並列フェッチ
   const [addressZip, meteo, airQuality, seaTemp, poiData, gsiElev, eqInfo] = await Promise.all([
     fetchAddressAndZip(lat, lon),
     fetchWeatherAndMeteorology(lat, lon),
@@ -1100,22 +1104,33 @@ export async function fetchAllCompanionData(
 
   const capital = findNearestCapital(lat, lon);
 
-  // GPSで取得した標高データとOpen-Meteoの標高データの平均化・補正
-  let finalElevation = meteo.elevation;
-  if (gpsAltitude !== null && meteo.elevation !== null) {
-    finalElevation = Math.round((gpsAltitude + meteo.elevation) / 2);
+  // GPS高度、Open-Meteo標高、国土地理院標高を賢く平均化・補正するロジック
+  const baseMetElevation = meteo.elevation;
+  let fallbackElevation = baseMetElevation;
+  if (gpsAltitude !== null && baseMetElevation !== null) {
+    fallbackElevation = Math.round((gpsAltitude + baseMetElevation) / 2);
+  } else if (gpsAltitude !== null) {
+    fallbackElevation = gpsAltitude;
+  }
+
+  let finalGSIElevation = gsiElev;
+  if (finalGSIElevation !== null) {
+    if (gpsAltitude !== null) {
+      // 国土地理院（非常に高精度）とGPS高度（誤差多）を 0.8:0.2 の重みで補正ブレンド
+      finalGSIElevation = Math.round(finalGSIElevation * 0.8 + gpsAltitude * 0.2);
+    }
+  } else {
+    finalGSIElevation = fallbackElevation;
   }
 
   const sunriseStr = meteo.sunrise?.time || "-";
   const sunsetStr = meteo.sunset?.time || "-";
   const magicHour = calculateMagicHour(sunriseStr, sunsetStr);
-  const magneticDeclination = calculateMagneticDeclination(lat, lon);
   const powerUsage = calculatePowerUsage(lat, lon);
   const trafficStatus = calculateTrafficStatus(lat, lon, speedKmh);
 
   return {
     ...meteo,
-    elevation: finalElevation,
     address: addressZip.address,
     zipcode: addressZip.zipcode,
     airQuality,
@@ -1131,10 +1146,9 @@ export async function fetchAllCompanionData(
     fujiBearing: fujiBear,
     prefecturalCapital: capital,
     ...poiData,
-    gsiElevation: gsiElev !== null ? gsiElev : finalElevation, // フォールバックも考慮
+    gsiElevation: finalGSIElevation,
     magicHour,
     earthquake: eqInfo,
-    magneticDeclination,
     powerUsage,
     trafficStatus,
   };
