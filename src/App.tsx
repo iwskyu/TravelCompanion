@@ -61,36 +61,8 @@ const INITIAL_COMPANION_DATA: CompanionData = {
   lowTide: null,
   moonAge: null,
   sunPosition: null,
-  river: null,
-  riverLevel: null,
-  roadDensity1: null,
-  roadDensity2: null,
-  convenience1: null,
-  convenience2: null,
-  toilet1: null,
-  toilet2: null,
-  wifi1: null,
-  wifi2: null,
-  gas1: null,
-  gas2: null,
-  parking1: null,
-  parking2: null,
-  roadStation1: null,
-  roadStation2: null,
-  hotel: null,
-  guesthouse: null,
-  station1: null,
-  station2: null,
-  bus1: null,
-  bus2: null,
-  gourmet1: null,
-  gourmet2: null,
   zipcode: null,
   address: null,
-  mountain: null,
-  attraction1: null,
-  attraction2: null,
-  intersection: null,
   dbLevel: null,
   currentDate: null,
   currentTime: null,
@@ -102,6 +74,7 @@ const INITIAL_COMPANION_DATA: CompanionData = {
   magneticDeclination: null,
   powerUsage: null,
   trafficStatus: null,
+  accumulatedDistance: 0,
 };
 
 export default function App() {
@@ -198,6 +171,12 @@ export default function App() {
   // リアルタイムセンサー情報保持用のRef（スロットリング更新用）
   const latestTilt = useRef<{ pitch: number; roll: number }>({ pitch: 0, roll: 0 });
   const latestHeading = useRef<number>(0);
+  const bearingHistory = useRef<{ x: number; y: number }[]>([]);
+  
+  // 累計移動距離用の前回位置保存Refと積算値Ref
+  const prevTrackCoords = useRef<{ lat: number; lon: number } | null>(null);
+  const currentAccumulatedDistance = useRef<number>(0);
+
   const latestGps = useRef<{ accuracy: number | null; speed: number | null; elevation: number | null }>({
     accuracy: null,
     speed: null,
@@ -315,28 +294,8 @@ export default function App() {
     const promises: Promise<void>[] = [];
 
     try {
-      // 1. 住所・郵便番号
-      if (tileIds.includes("address") || tileIds.includes("zipcode")) {
-        // 大きく移動していない、かつ既に有効データがある場合はフェッチを完全にスキップ（バッテリー延命）
-        if (moved || !data.address || !data.zipcode) {
-          promises.push((async () => {
-            const res = await fetchAddressAndZip(lat, lon);
-            setData((prev) => ({
-              ...prev,
-              address: res.address,
-              zipcode: res.zipcode,
-            }));
-            setLastUpdated((prev) => ({
-              ...prev,
-              address: nowStamp,
-              zipcode: nowStamp,
-            }));
-          })());
-        }
-      }
-
       // 2. 天気・気象・気候 (マジックアワー、地理院標高も連動)
-      const weatherKeys: TileId[] = ["weather", "precipitation", "rainCloudApproach", "uvIndex", "sunrise", "sunset", "sunriseSunset", "wind", "humidity", "elevation", "gsiElevation", "magicHour"];
+      const weatherKeys: TileId[] = ["weather", "precipitation", "rainCloudApproach", "uvIndex", "sunrise", "sunset", "sunriseSunset", "wind", "humidity", "gsiElevation", "magicHour", "sunsetCountdown"];
       if (tileIds.some(id => weatherKeys.includes(id))) {
         promises.push((async () => {
           const [res, gsiElev] = await Promise.all([
@@ -348,12 +307,6 @@ export default function App() {
           const finalSunset = isSameDay && data.sunset ? data.sunset : res.sunset;
           const magicHourVal = calculateMagicHour(finalSunrise?.time || "-", finalSunset?.time || "-");
 
-          let finalElevation = res.elevation;
-          const gpsAlt = latestGps.current.elevation;
-          if (gpsAlt !== null && res.elevation !== null) {
-            finalElevation = Math.round((gpsAlt + res.elevation) / 2);
-          }
-
           setData((prev) => ({
             ...prev,
             weather: res.weather,
@@ -362,8 +315,7 @@ export default function App() {
             uvIndex: res.uvIndex,
             sunrise: finalSunrise,
             sunset: finalSunset,
-            elevation: !moved && prev.elevation !== null ? prev.elevation : (finalElevation !== null ? finalElevation : prev.elevation),
-            gsiElevation: gsiElev !== null ? gsiElev : (prev.gsiElevation !== null ? prev.gsiElevation : finalElevation),
+            gsiElevation: gsiElev !== null ? gsiElev : prev.gsiElevation,
             magicHour: magicHourVal,
           }));
           setLastUpdated((prev) => {
@@ -372,10 +324,6 @@ export default function App() {
               if (tileIds.includes(id)) {
                 // 日の出・日没は日付が変わったとき、または初回のみ光らせる
                 if ((id === "sunrise" || id === "sunset" || id === "sunriseSunset") && isSameDay && prev.sunrise) {
-                  return;
-                }
-                // 標高は大きく動いたとき、または初回のみ光らせる
-                if (id === "elevation" && !moved && prev.elevation !== null) {
                   return;
                 }
                 next[id] = nowStamp;
@@ -416,21 +364,6 @@ export default function App() {
         })());
       }
 
-      // 2.7. 磁気偏角
-      if (tileIds.includes("magneticDeclination")) {
-        promises.push((async () => {
-          const res = calculateMagneticDeclination(lat, lon);
-          setData((prev) => ({
-            ...prev,
-            magneticDeclination: res,
-          }));
-          setLastUpdated((prev) => ({
-            ...prev,
-            magneticDeclination: nowStamp,
-          }));
-        })());
-      }
-
       // 3. 大気・花粉
       if (tileIds.includes("airQuality")) {
         promises.push((async () => {
@@ -466,24 +399,18 @@ export default function App() {
         }
       }
 
-      // 5. 周辺POI (Overpass API)
-      const poiKeys: TileId[] = [
-        "river", "riverLevel", "roadDensity1", "roadDensity2", "trafficStatus",
-        "convenience1", "convenience2", "toilet1", "toilet2", "wifi1", "wifi2",
-        "gas1", "gas2", "parking1", "parking2", "roadStation1", "roadStation2",
-        "hotel", "guesthouse", "station1", "station2", "bus1", "bus2",
-        "gourmet1", "gourmet2", "mountain", "attraction1", "attraction2", "seaDistance", "seaBearing"
-      ];
+      // 5. 周辺POI (海までの距離・方位、道路交通状況)
+      const poiKeys: TileId[] = ["seaDistance", "seaBearing", "trafficStatus"];
       if (tileIds.some(id => poiKeys.includes(id))) {
-        // 大きく移動していない、かつ既にデータがある場合はスキップしてバッテリー・通信量を極限まで削減
-        if (moved || !data.river) {
+        if (moved || data.seaDistance === null) {
           promises.push((async () => {
             const res = await fetchPOIFromOverpass(lat, lon);
             const speedKmh = latestGps.current.speed !== null ? Math.round(latestGps.current.speed * 3.6) : 0;
             const traffic = calculateTrafficStatus(lat, lon, speedKmh);
             setData((prev) => ({
               ...prev,
-              ...res,
+              seaDistance: res.seaDistance,
+              seaBearing: res.seaBearing,
               trafficStatus: traffic,
             }));
             setLastUpdated((prev) => {
@@ -1210,10 +1137,24 @@ export default function App() {
             speed: position.coords.speed,
             elevation: position.coords.altitude,
           };
-          currentCoords.current = {
-            lat: position.coords.latitude,
-            lon: position.coords.longitude,
-          };
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+          currentCoords.current = { lat, lon };
+
+          // 累計移動距離の積算
+          if (prevTrackCoords.current) {
+            const distKm = calculateDistance(
+              prevTrackCoords.current.lat,
+              prevTrackCoords.current.lon,
+              lat,
+              lon
+            );
+            // GPS誤差（揺らぎ）による不意な蓄積を防ぐため、2m以上かつ精度30m以下の場合のみ積算
+            if (distKm > 0.002 && (!position.coords.accuracy || position.coords.accuracy < 30)) {
+              currentAccumulatedDistance.current += distKm * 1000;
+            }
+          }
+          prevTrackCoords.current = { lat, lon };
         },
         (err) => {
           console.warn("watchPosition error", err);
@@ -1233,12 +1174,37 @@ export default function App() {
       if (heading === undefined || heading === null) {
         heading = e.alpha !== null ? 360 - e.alpha : 0;
       }
-      latestHeading.current = Math.round(heading);
+
+      // 移動平均フィルタ (巡回的な角度を正しく平均するためにベクトルx/yに変換)
+      const rad = (heading * Math.PI) / 180;
+      const currentVec = { x: Math.cos(rad), y: Math.sin(rad) };
+
+      const history = bearingHistory.current;
+      history.push(currentVec);
+      if (history.length > 8) {
+        history.shift();
+      }
+
+      let sumX = 0;
+      let sumY = 0;
+      for (const vec of history) {
+        sumX += vec.x;
+        sumY += vec.y;
+      }
+      const avgX = sumX / history.length;
+      const avgY = sumY / history.length;
+
+      let avgRad = Math.atan2(avgY, avgX);
+      if (avgRad < 0) {
+        avgRad += 2 * Math.PI;
+      }
+      const smoothedHeading = Math.round((avgRad * 180) / Math.PI) % 360;
+      latestHeading.current = smoothedHeading;
     };
     window.addEventListener("deviceorientation", handleOrientation, true);
 
     // --- 3秒毎更新 (旧1秒毎) ---
-    // 📐傾き, 🧭方角, マイクdBをまとめて3秒毎に1回だけ一括ステート描画（スロットリングして描画負荷・バッテリーを大幅節約）
+    // 📐傾き, 🧭方角, マイクdB, 🏃累計移動距離をまとめて3秒毎に1回だけ一括ステート描画
     const interval3s = setInterval(() => {
       if (isPausedRef.current) return;
       const nowStamp = Date.now();
@@ -1252,12 +1218,15 @@ export default function App() {
         tilt: { ...latestTilt.current },
         bearing: { angle: heading, direction: getDirectionString(heading) },
         dbLevel: latestDb.current,
+        accumulatedDistance: Math.round(currentAccumulatedDistance.current),
       }));
       setLastUpdated((prev) => ({
         ...prev,
         tilt: nowStamp,
         bearing: nowStamp,
         dbLevel: nowStamp,
+        accumulatedDistance: nowStamp,
+        sunsetCountdown: nowStamp, // カウントダウンタイマーも3秒ごとに表示を更新
       }));
     }, 3000);
 
@@ -1288,16 +1257,12 @@ export default function App() {
     }, 3 * 60 * 1000);
 
     // --- 10分毎更新 ---
-    // POI（駅、バス、道の駅、川、温泉、山、黄砂、交差点）、日の出・日没、大気汚染、満潮・干潮
+    // 海、日の出・日没、大気汚染、満潮・干潮、黄砂 (不要なPOIは完全に削除)
     const interval10m = setInterval(() => {
       if (isPausedRef.current) return;
       const list10m: TileId[] = [
         "tokyoDistance", "seaDistance", "fujiDistance", "prefecturalCapital",
-        "wind", "humidity", "airQuality", "seaTemp", "highLowTide", "sunPosition",
-        "river", "riverLevel",
-        "roadStation1", "onsen",
-        "station1", "station2", "bus1", "bus2",
-        "mountain", "intersection", "kosa"
+        "wind", "humidity", "airQuality", "seaTemp", "highLowTide", "sunPosition", "kosa"
       ];
       updateTileData(list10m);
     }, 10 * 60 * 1000);
@@ -1366,7 +1331,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <h1 className="text-base sm:text-lg font-black text-white tracking-wider flex items-center gap-1 whitespace-nowrap">
-              旅のお供 <span className="text-[10px] font-normal opacity-70">ver77</span>
+              旅のお供 <span className="text-[10px] font-normal opacity-70">ver78</span>
             </h1>
           </div>
         </div>

@@ -187,13 +187,61 @@ export function CompanionTile({
     gradientClass = "from-slate-700/40 to-slate-800/40";
   }
 
+  // 日没カウントダウン用の動的な滑らか色変化 (黄/オレンジ -> 赤、日没後はディープな夜色)
+  let sunsetStyle: React.CSSProperties | undefined = undefined;
+  if (!isFlashing && !isCached && config.id === "sunsetCountdown" && data.sunset && data.sunset.time && data.sunset.time !== "-") {
+    try {
+      const parts = data.sunset.time.split(":");
+      if (parts.length >= 2) {
+        const sunsetHour = parseInt(parts[0]);
+        const sunsetMin = parseInt(parts[1]);
+
+        const now = new Date();
+        const sunsetDate = new Date();
+        sunsetDate.setHours(sunsetHour, sunsetMin, 0, 0);
+
+        const diffMs = sunsetDate.getTime() - now.getTime();
+        const diffMins = diffMs / 60000;
+
+        if (diffMins > 0) {
+          // 120分かけて徐々に赤くしていく
+          const t = Math.max(0, Math.min(1, diffMins / 120));
+
+          // 開始色1 (t=1): 黄色 (RGB 245, 158, 11) -> 終了色1 (t=0): 赤 (RGB 220, 38, 38)
+          const r1 = Math.round(220 + (245 - 220) * t);
+          const g1 = Math.round(38 + (158 - 38) * t);
+          const b1 = Math.round(38 + (11 - 38) * t);
+
+          // 開始色2 (t=1): オレンジ (RGB 234, 88, 12) -> 終了色2 (t=0): 深い赤 (RGB 153, 27, 27)
+          const r2 = Math.round(153 + (234 - 153) * t);
+          const g2 = Math.round(27 + (88 - 27) * t);
+          const b2 = Math.round(27 + (12 - 27) * t);
+
+          sunsetStyle = {
+            background: `linear-gradient(135deg, rgb(${r1}, ${g1}, ${b1}), rgb(${r2}, ${g2}, ${b2}))`,
+          };
+        } else {
+          // 日没後はディープパープル/インディゴ夜間
+          sunsetStyle = {
+            background: "linear-gradient(135deg, #1e1b4b, #311042)",
+          };
+        }
+      }
+    } catch (e) {
+      console.warn("Error calculating dynamic sunset gradient style", e);
+    }
+  }
+
   return (
     <motion.div
       id={`tile-${config.id}`}
       layout
       whileTap={onClick ? { scale: 0.95 } : undefined}
       onClick={onClick}
-      className={`relative p-[1px] rounded-xl overflow-hidden transition-all duration-300 ease-out h-[72px] sm:h-20 md:h-24 select-none bg-gradient-to-br ${gradientClass} ${
+      style={sunsetStyle}
+      className={`relative p-[1px] rounded-xl overflow-hidden transition-all duration-300 ease-out h-[72px] sm:h-20 md:h-24 select-none ${
+        sunsetStyle ? "" : `bg-gradient-to-br ${gradientClass}`
+      } ${
         onClick ? "cursor-pointer active:brightness-90 hover:brightness-110 hover:shadow-lg hover:shadow-cyan-500/10" : ""
       }`}
     >

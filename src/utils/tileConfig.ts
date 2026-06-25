@@ -385,85 +385,8 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
   },
 
   // =========================================================================
-  // 9. 周辺POI・移動支援情報 [Overpass API]（パープル: border-purple）
+  // 9. 移動支援・トラッキング・追加パネル（パープル: border-purple / border-orange）
   // =========================================================================
-  {
-    id: "station1",
-    label: "最寄り駅1",
-    emoji: "🚉",
-    borderColorClass: "border-purple",
-    render: (data, heading) => {
-      if (!data.station1 || data.station1.name === "該当なし(5km)") return "-";
-      const arrow = getArrow(data.station1.bearing, heading);
-      return `${data.station1.name}\n${formatDistance(data.station1.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "station2",
-    label: "最寄り駅2",
-    emoji: "🚉",
-    borderColorClass: "border-purple",
-    render: (data, heading) => {
-      if (!data.station2 || data.station2.name === "該当なし(5km)") return "-";
-      const arrow = getArrow(data.station2.bearing, heading);
-      return `${data.station2.name}\n${formatDistance(data.station2.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "bus1",
-    label: "バス停1",
-    emoji: "🚌",
-    borderColorClass: "border-purple",
-    render: (data, heading) => {
-      if (!data.bus1 || data.bus1.name === "該当なし(5km)") return "-";
-      const arrow = getArrow(data.bus1.bearing, heading);
-      return `${data.bus1.name}\n${formatDistance(data.bus1.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "bus2",
-    label: "バス停2",
-    emoji: "🚌",
-    borderColorClass: "border-purple",
-    render: (data, heading) => {
-      if (!data.bus2 || data.bus2.name === "該当なし(5km)") return "-";
-      const arrow = getArrow(data.bus2.bearing, heading);
-      return `${data.bus2.name}\n${formatDistance(data.bus2.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "roadStation1",
-    label: "最寄りの「道の駅」",
-    emoji: "🏪",
-    borderColorClass: "border-purple",
-    render: (data, heading) => {
-      if (!data.roadStation1 || data.roadStation1.name === "該当なし(5km)") return "-";
-      const arrow = getArrow(data.roadStation1.bearing, heading);
-      return `${data.roadStation1.name}\n${formatDistance(data.roadStation1.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "onsen",
-    label: "最寄りの温泉・入浴施設",
-    emoji: "♨️",
-    borderColorClass: "border-purple",
-    render: (data, heading) => {
-      if (!data.onsen || data.onsen.name === "該当なし(5km)") return "-";
-      const arrow = getArrow(data.onsen.bearing, heading);
-      return `${data.onsen.name}\n${formatDistance(data.onsen.distance)} ${arrow}`;
-    },
-  },
-
-  {
-    id: "mountain",
-    label: "最寄り山",
-    emoji: "⛰️",
-    borderColorClass: "border-purple",
-    render: (data) => {
-      if (!data.mountain || data.mountain.name === "該当なし(5km)") return "-";
-      return `${data.mountain.name}\n${Math.round(data.mountain.elevation)}m (${formatDistance(data.mountain.distance)})`;
-    },
-  },
   {
     id: "gsiElevation",
     label: "国土地理院 標高",
@@ -475,35 +398,48 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     },
   },
   {
-    id: "river",
-    label: "最寄り川",
-    emoji: "💧",
-    borderColorClass: "border-purple",
+    id: "sunsetCountdown",
+    label: "日没カウントダウン",
+    emoji: "🌇",
+    borderColorClass: "border-orange",
     render: (data) => {
-      if (!data.river || data.river.name === "該当なし(5km)") return "-";
-      return `${data.river.name}\n(${formatDistance(data.river.distance)})`;
-    },
-  },
-  {
-    id: "riverLevel",
-    label: "河川水位",
-    emoji: "🌊",
-    borderColorClass: "border-purple",
-    render: (data) => {
-      if (!data.riverLevel || data.riverLevel.name === "該当なし(5km)") return "-";
-      return `${data.riverLevel.name}\n${data.riverLevel.level} [${data.riverLevel.danger}]`;
-    },
-  },
-  {
-    id: "intersection",
-    label: "交差点",
-    emoji: "🚦",
-    borderColorClass: "border-purple",
-    render: (data, heading) => {
-      if (!data.intersection || data.intersection.name === "該当なし(5km)") return "-";
-      const arrow = getArrow(data.intersection.bearing, heading);
-      return `${data.intersection.name}\n${formatDistance(data.intersection.distance)} ${arrow}`;
-    },
-  },
+      if (!data.sunset || !data.sunset.time || data.sunset.time === "-") return "-";
+      const parts = data.sunset.time.split(":");
+      if (parts.length < 2) return "-";
+      const sunsetHour = parseInt(parts[0]);
+      const sunsetMin = parseInt(parts[1]);
 
+      const now = new Date();
+      const sunsetDate = new Date();
+      sunsetDate.setHours(sunsetHour, sunsetMin, 0, 0);
+
+      const diffMs = sunsetDate.getTime() - now.getTime();
+      if (diffMs > 0) {
+        const hours = Math.floor(diffMs / 3600000);
+        const mins = Math.floor((diffMs % 3600000) / 60000);
+        const secs = Math.floor((diffMs % 60000) / 1000);
+        return `日没まで\n${hours > 0 ? `${hours}時間` : ""}${mins}分${secs}秒`;
+      } else {
+        const passedMins = Math.floor(Math.abs(diffMs) / 60000);
+        if (passedMins < 60) {
+          return `日没から\n${passedMins}分経過`;
+        }
+        return "夜間 (日没済)";
+      }
+    },
+  },
+  {
+    id: "accumulatedDistance",
+    label: "累計移動距離",
+    emoji: "🏃",
+    borderColorClass: "border-green",
+    render: (data) => {
+      if (data.accumulatedDistance === null || data.accumulatedDistance === undefined) return "0m";
+      const dist = data.accumulatedDistance;
+      if (dist < 1000) {
+        return `${Math.round(dist)}m`;
+      }
+      return `${(dist / 1000).toFixed(2)}km`;
+    },
+  },
 ];

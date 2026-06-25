@@ -35,39 +35,8 @@ export interface CompanionData {
   moonAge: { age: number; state: string } | null;
   sunPosition: { bearing: number; cardinal: string } | null;
 
-  river: { name: string; distance: number } | null;
-  riverLevel: { name: string; level: string; danger: string } | null;
-
-  convenience1: { name: string; distance: number; bearing: number } | null;
-  convenience2: { name: string; distance: number; bearing: number } | null;
-  toilet1: { name: string; distance: number; bearing: number } | null;
-  toilet2: { name: string; distance: number; bearing: number } | null;
-  wifi1: { name: string; distance: number; bearing: number } | null;
-  wifi2: { name: string; distance: number; bearing: number } | null;
-  gas1: { name: string; distance: number; bearing: number } | null;
-  gas2: { name: string; distance: number; bearing: number } | null;
-  parking1: { name: string; distance: number; bearing: number } | null;
-  parking2: { name: string; distance: number; bearing: number } | null;
-  roadStation1: { name: string; distance: number; bearing: number } | null;
-  roadStation2: { name: string; distance: number; bearing: number } | null;
-  onsen: { name: string; distance: number; bearing: number } | null;
-  hotel: { name: string; distance: number } | null;
-  guesthouse: { name: string; distance: number } | null;
-
-  station1: { line: string; name: string; distance: number; bearing: number } | null;
-  station2: { line: string; name: string; distance: number; bearing: number } | null;
-  bus1: { line: string; name: string; distance: number; bearing: number; nextBus: string } | null;
-  bus2: { line: string; name: string; distance: number; bearing: number; nextBus: string } | null;
-
-  gourmet1: { name: string; rating: number; distance: number; bearing: number } | null;
-  gourmet2: { name: string; rating: number; distance: number; bearing: number } | null;
-
   zipcode: string | null;
   address: string | null;
-  mountain: { name: string; elevation: number; distance: number } | null;
-  attraction1: { name: string; distance: number; bearing: number } | null;
-  attraction2: { name: string; distance: number; bearing: number } | null;
-  intersection: { name: string; distance: number; bearing: number } | null;
   dbLevel: number | null;
 
   currentDate?: string | null;
@@ -80,6 +49,9 @@ export interface CompanionData {
   earthquake?: string | null;
   powerUsage?: { company: string; rate: number; usage: number; capacity: number } | null;
   trafficStatus?: string | null;
+
+  // 新機能: アプリ起動時からの累計移動距離 (m)
+  accumulatedDistance?: number | null;
 }
 
 export type TileId = keyof CompanionData | string;
