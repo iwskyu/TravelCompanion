@@ -127,8 +127,11 @@ export function CompanionTile({
     // 周囲の静かさの値はフォントサイズを明確に小さくする
     fontSizeClass = "text-[11px] sm:text-[12px] md:text-[13px] font-bold leading-snug";
   } else if (config.id === "earthquake") {
-    // 地震・防災情報の値の文字は小さくして直感的かつ詳細に読めるようにする
-    fontSizeClass = "text-[9px] sm:text-[10px] md:text-[11.5px] font-medium leading-relaxed text-left tracking-wide px-0.5 self-start overflow-y-auto max-h-[46px]";
+    // 地震・防災情報、値をセンタリングしてフォント大きくして
+    fontSizeClass = "text-[14px] sm:text-[16px] md:text-[18px] font-bold leading-normal text-center tracking-wide px-0.5 self-center w-full overflow-y-auto max-h-[46px]";
+  } else if (config.id === "magicHour") {
+    // マジックアワー、フォント大きくして
+    fontSizeClass = "text-[16px] sm:text-[18px] md:text-[20px] font-black leading-tight text-center";
   }
 
   // 枠のグラデーション色を取得
@@ -187,7 +190,7 @@ export function CompanionTile({
     gradientClass = "from-slate-700/40 to-slate-800/40";
   }
 
-  // 日没カウントダウン用の動的な滑らか色変化 (黄/オレンジ -> 赤、日没後はディープな夜色)
+  // 日没カウントダウン用の動的な滑らか色変化 (日没前は常時光らせず他のパネルと同様、日没後はディープな夜色)
   let sunsetStyle: React.CSSProperties | undefined = undefined;
   if (!isFlashing && !isCached && config.id === "sunsetCountdown" && data.sunset && data.sunset.time && data.sunset.time !== "-") {
     try {
@@ -204,26 +207,12 @@ export function CompanionTile({
         const diffMins = diffMs / 60000;
 
         if (diffMins > 0) {
-          // 120分かけて徐々に赤くしていく
-          const t = Math.max(0, Math.min(1, diffMins / 120));
-
-          // 開始色1 (t=1): 黄色 (RGB 245, 158, 11) -> 終了色1 (t=0): 赤 (RGB 220, 38, 38)
-          const r1 = Math.round(220 + (245 - 220) * t);
-          const g1 = Math.round(38 + (158 - 38) * t);
-          const b1 = Math.round(38 + (11 - 38) * t);
-
-          // 開始色2 (t=1): オレンジ (RGB 234, 88, 12) -> 終了色2 (t=0): 深い赤 (RGB 153, 27, 27)
-          const r2 = Math.round(153 + (234 - 153) * t);
-          const g2 = Math.round(27 + (88 - 27) * t);
-          const b2 = Math.round(27 + (12 - 27) * t);
-
-          sunsetStyle = {
-            background: `linear-gradient(135deg, rgb(${r1}, ${g1}, ${b1}), rgb(${r2}, ${g2}, ${b2}))`,
-          };
+          // 日没前は常時光らせないために特別なグラデーションスタイルは適用しない
+          sunsetStyle = undefined;
         } else {
-          // 日没後はディープパープル/インディゴ夜間
+          // 日没後はディープパープル/インディゴ夜間 (落ち着いたトーン)
           sunsetStyle = {
-            background: "linear-gradient(135deg, #1e1b4b, #311042)",
+            background: "linear-gradient(135deg, #0f0c29, #1e1b4b)",
           };
         }
       }

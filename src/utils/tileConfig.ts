@@ -107,6 +107,16 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       return `${db} dB\n${label}`;
     },
   },
+  {
+    id: "gsiElevation",
+    label: "国土地理院 標高",
+    emoji: "🗻",
+    borderColorClass: "border-purple",
+    render: (data) => {
+      if (data.gsiElevation === null || data.gsiElevation === undefined) return "-";
+      return `${Math.round(data.gsiElevation)}m`;
+    },
+  },
 
   // =========================================================================
   // 3. 地球物理・目的地方角と距離（スカイブルー: border-blue）
@@ -239,6 +249,37 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const r1 = data.sunrise ? `${data.sunrise.time} ${getArrow(data.sunrise.bearing, heading)}` : "-";
       const r2 = data.sunset ? `${data.sunset.time} ${getArrow(data.sunset.bearing, heading)}` : "-";
       return `出: ${r1}\n没: ${r2}`;
+    },
+  },
+  {
+    id: "sunsetCountdown",
+    label: "日没カウントダウン",
+    emoji: "🌇",
+    borderColorClass: "border-orange",
+    render: (data) => {
+      if (!data.sunset || !data.sunset.time || data.sunset.time === "-") return "-";
+      const parts = data.sunset.time.split(":");
+      if (parts.length < 2) return "-";
+      const sunsetHour = parseInt(parts[0]);
+      const sunsetMin = parseInt(parts[1]);
+
+      const now = new Date();
+      const sunsetDate = new Date();
+      sunsetDate.setHours(sunsetHour, sunsetMin, 0, 0);
+
+      const diffMs = sunsetDate.getTime() - now.getTime();
+      if (diffMs > 0) {
+        const hours = Math.floor(diffMs / 3600000);
+        const mins = Math.floor((diffMs % 3600000) / 60000);
+        const secs = Math.floor((diffMs % 60000) / 1000);
+        return `日没まで\n${hours > 0 ? `${hours}時間` : ""}${mins}分${secs}秒`;
+      } else {
+        const passedMins = Math.floor(Math.abs(diffMs) / 60000);
+        if (passedMins < 60) {
+          return `日没から\n${passedMins}分経過`;
+        }
+        return "夜間 (日没済)";
+      }
     },
   },
   {
@@ -387,47 +428,6 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
   // =========================================================================
   // 9. 移動支援・トラッキング・追加パネル（パープル: border-purple / border-orange）
   // =========================================================================
-  {
-    id: "gsiElevation",
-    label: "国土地理院 標高",
-    emoji: "🗻",
-    borderColorClass: "border-purple",
-    render: (data) => {
-      if (data.gsiElevation === null || data.gsiElevation === undefined) return "-";
-      return `${Math.round(data.gsiElevation)}m`;
-    },
-  },
-  {
-    id: "sunsetCountdown",
-    label: "日没カウントダウン",
-    emoji: "🌇",
-    borderColorClass: "border-orange",
-    render: (data) => {
-      if (!data.sunset || !data.sunset.time || data.sunset.time === "-") return "-";
-      const parts = data.sunset.time.split(":");
-      if (parts.length < 2) return "-";
-      const sunsetHour = parseInt(parts[0]);
-      const sunsetMin = parseInt(parts[1]);
-
-      const now = new Date();
-      const sunsetDate = new Date();
-      sunsetDate.setHours(sunsetHour, sunsetMin, 0, 0);
-
-      const diffMs = sunsetDate.getTime() - now.getTime();
-      if (diffMs > 0) {
-        const hours = Math.floor(diffMs / 3600000);
-        const mins = Math.floor((diffMs % 3600000) / 60000);
-        const secs = Math.floor((diffMs % 60000) / 1000);
-        return `日没まで\n${hours > 0 ? `${hours}時間` : ""}${mins}分${secs}秒`;
-      } else {
-        const passedMins = Math.floor(Math.abs(diffMs) / 60000);
-        if (passedMins < 60) {
-          return `日没から\n${passedMins}分経過`;
-        }
-        return "夜間 (日没済)";
-      }
-    },
-  },
   {
     id: "accumulatedDistance",
     label: "累計移動距離",

@@ -88,8 +88,27 @@ export default function App() {
   // タイルごとのキャッシュ判別（フェッチ失敗等で古い/キャッシュであることを示すフラグ）
   const [cachedTiles, setCachedTiles] = useState<Record<TileId, boolean>>({});
 
-  // タイルの順序（ドラッグ＆ドロップによる並べ替え対応）
-  const [tileOrder, setTileOrder] = useState<TileId[]>(() => ALL_TILES_CONFIG.map((c) => c.id));
+  // タイルの順序（ドラッグ＆ドロップによる並べ替え対応・ローカルストレージ自動復元付き）
+  const [tileOrder, setTileOrder] = useState<TileId[]>(() => {
+    try {
+      const saved = localStorage.getItem("tile_order");
+      if (saved) {
+        const parsed = JSON.parse(saved) as TileId[];
+        const validIds = ALL_TILES_CONFIG.map((c) => c.id);
+        const filtered = parsed.filter((id) => validIds.includes(id));
+        const missing = validIds.filter((id) => !filtered.includes(id));
+        return [...filtered, ...missing];
+      }
+    } catch (e) {
+      console.warn("Failed to parse tile order from localStorage", e);
+    }
+    return ALL_TILES_CONFIG.map((c) => c.id);
+  });
+
+  // タイルの順序が変化したときにlocalStorageに保存
+  useEffect(() => {
+    localStorage.setItem("tile_order", JSON.stringify(tileOrder));
+  }, [tileOrder]);
 
   // ドラッグ＆ドロップ用のインデックス参照
   const draggedIndex = useRef<number | null>(null);
@@ -116,6 +135,45 @@ export default function App() {
   };
 
   const mainRef = useRef<HTMLElement | null>(null);
+
+  // Screen Wake Lock API（画面自動オフ・スリープ・ロックの防止）
+  const wakeLockRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (!started) return;
+
+    const requestWakeLock = async () => {
+      if ("wakeLock" in navigator) {
+        try {
+          wakeLockRef.current = await (navigator.wakeLock as any).request("screen");
+          console.log("Wake Lock has been successfully acquired!");
+        } catch (err) {
+          console.warn("Screen Wake Lock request failed:", err);
+        }
+      }
+    };
+
+    requestWakeLock();
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === "visible") {
+        await requestWakeLock();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release().then(() => {
+          wakeLockRef.current = null;
+        }).catch((err: any) => {
+          console.warn("Failed to release Wake Lock:", err);
+        });
+      }
+    };
+  }, [started]);
 
   const handleScrollToContent = () => {
     if (mainRef.current) {
