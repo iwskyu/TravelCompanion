@@ -841,10 +841,9 @@ export default function App() {
     const taskPOI = async () => {
       const poiTileIds: TileId[] = [
         "river", "riverLevel", "trafficStatus",
-        "convenience1", "convenience2", "toilet1", "toilet2", "wifi1", "wifi2",
-        "gas1", "gas2", "parking1", "parking2", "roadStation1", "onsen",
-        "hotel", "guesthouse", "station1", "station2", "bus1", "bus2",
-        "gourmet1", "gourmet2", "mountain", "attraction1", "attraction2", "intersection"
+        "roadStation1", "onsen",
+        "station1", "station2", "bus1", "bus2",
+        "mountain", "intersection"
       ];
       if (!moved && data.river) {
         console.log("Battery Save: Skip Overpass API because position hasn't changed significantly.");
@@ -986,10 +985,9 @@ export default function App() {
     const weatherKeys: TileId[] = ["weather", "precipitation", "rainCloudApproach", "uvIndex", "wind", "humidity", "gsiElevation", "magicHour"];
     const poiKeys: TileId[] = [
       "river", "riverLevel", "trafficStatus",
-      "convenience1", "convenience2", "toilet1", "toilet2", "wifi1", "wifi2",
-      "gas1", "gas2", "parking1", "parking2", "roadStation1", "onsen",
-      "hotel", "guesthouse", "station1", "station2", "bus1", "bus2",
-      "gourmet1", "gourmet2", "mountain", "attraction1", "attraction2", "intersection"
+      "roadStation1", "onsen",
+      "station1", "station2", "bus1", "bus2",
+      "mountain", "intersection"
     ];
 
     if (tileId === "address" || tileId === "zipcode") {
@@ -1290,17 +1288,16 @@ export default function App() {
     }, 3 * 60 * 1000);
 
     // --- 10分毎更新 ---
-    // POI（コンビニ、トイレ、駅、バス、Wi-Fi、GS、駐車場、道の駅、ホテル、グルメ、観光地、川、道路）、日の出・日没、大気汚染、満潮・干潮、黄砂、温泉
+    // POI（駅、バス、道の駅、川、温泉、山、黄砂、交差点）、日の出・日没、大気汚染、満潮・干潮
     const interval10m = setInterval(() => {
       if (isPausedRef.current) return;
       const list10m: TileId[] = [
         "tokyoDistance", "seaDistance", "fujiDistance", "prefecturalCapital",
         "wind", "humidity", "airQuality", "seaTemp", "highLowTide", "sunPosition",
         "river", "riverLevel",
-        "convenience1", "convenience2", "toilet1", "toilet2", "wifi1", "wifi2",
-        "gas1", "gas2", "parking1", "parking2", "roadStation1", "onsen",
-        "hotel", "guesthouse", "station1", "station2", "bus1", "bus2",
-        "gourmet1", "gourmet2", "mountain", "attraction1", "attraction2", "intersection", "kosa"
+        "roadStation1", "onsen",
+        "station1", "station2", "bus1", "bus2",
+        "mountain", "intersection", "kosa"
       ];
       updateTileData(list10m);
     }, 10 * 60 * 1000);

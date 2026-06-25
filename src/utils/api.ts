@@ -551,22 +551,12 @@ async function fetchPOIFromOverpassRaw(
     const query = `
       [out:json][timeout:15];
       (
-        node["shop"="convenience"](around:5000,${lat},${lon});
-        node["amenity"="toilets"](around:5000,${lat},${lon});
-        node["internet_access"~"wlan|public"](around:5000,${lat},${lon});
-        node["amenity"="fuel"](around:10000,${lat},${lon});
-        node["amenity"="parking"](around:5000,${lat},${lon});
         node["highway"~"rest_area|services"](around:15000,${lat},${lon});
         node["amenity"="public_bath"](around:10000,${lat},${lon});
-        node["tourism"="hotel"](around:10000,${lat},${lon});
-        node["tourism"~"hostel|guest_house"](around:10000,${lat},${lon});
         node["railway"="station"](around:10000,${lat},${lon});
         node["highway"="bus_stop"](around:5000,${lat},${lon});
-        node["amenity"~"restaurant|cafe"](around:5000,${lat},${lon});
-        node["tourism"~"attraction|viewpoint"](around:10000,${lat},${lon});
         node["natural"="peak"](around:15000,${lat},${lon});
         way["waterway"="river"](around:5000,${lat},${lon});
-        way["highway"~"motorway|trunk|primary"](around:5000,${lat},${lon});
         node["highway"~"traffic_signals|crossing|mini_roundabout|give_way"](around:5000,${lat},${lon});
       );
       out center;
