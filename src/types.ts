@@ -45,6 +45,7 @@ export interface CompanionData {
   waveInfo?: { height: number; period: number; direction: string } | null;
 
   gsiElevation?: number | null;
+  elevation?: number | null;
   magicHour?: string | null;
   earthquake?: string | null;
   powerUsage?: { company: string; rate: number; usage: number; capacity: number } | null;
@@ -62,4 +63,5 @@ export interface TileConfig {
   emoji: string;
   borderColorClass: string;
   render: (data: CompanionData, deviceHeading: number | null) => string | ReactNode;
+  category: "environment" | "transit" | "disaster" | "system";
 }

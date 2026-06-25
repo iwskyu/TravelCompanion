@@ -14,7 +14,6 @@ import {
   fetchSeaTemperature,
   fetchPOIFromOverpass,
   getWeatherEmojiAndName,
-  fetchGSIElevation,
   calculateMagicHour,
   fetchEarthquakeInfo,
   calculateMagneticDeclination,
@@ -68,7 +67,6 @@ const INITIAL_COMPANION_DATA: CompanionData = {
   currentTime: null,
   pm25: null,
   waveInfo: null,
-  gsiElevation: null,
   magicHour: null,
   earthquake: null,
   magneticDeclination: null,
@@ -84,6 +82,9 @@ export default function App() {
   const [dbLevel, setDbLevel] = useState<number>(0);
   const [isUpdating, setIsUpdating] = useState(false);
   const isPausedRef = useRef<boolean>(false);
+  
+  // カテゴリ選択用 state ("all" = すべて, "environment" = 環境, "transit" = 交通, "disaster" = 防災)
+  const [activeCategory, setActiveCategory] = useState<"all" | "environment" | "transit" | "disaster">("all");
 
   // タイルごとのキャッシュ判別（フェッチ失敗等で古い/キャッシュであることを示すフラグ）
   const [cachedTiles, setCachedTiles] = useState<Record<TileId, boolean>>({});
@@ -157,7 +158,18 @@ export default function App() {
 
     const handleVisibilityChange = async () => {
       if (document.visibilityState === "visible") {
+        isPausedRef.current = false;
         await requestWakeLock();
+      } else {
+        isPausedRef.current = true;
+        if (wakeLockRef.current) {
+          try {
+            await wakeLockRef.current.release();
+            wakeLockRef.current = null;
+          } catch (e) {
+            console.warn("Wake lock release err", e);
+          }
+        }
       }
     };
 
@@ -352,18 +364,23 @@ export default function App() {
     const promises: Promise<void>[] = [];
 
     try {
-      // 2. 天気・気象・気候 (マジックアワー、地理院標高も連動)
-      const weatherKeys: TileId[] = ["weather", "precipitation", "rainCloudApproach", "uvIndex", "sunrise", "sunset", "sunriseSunset", "wind", "humidity", "gsiElevation", "magicHour", "sunsetCountdown"];
+      // 2. 天気・気象・気候 (マジックアワー、標高も連動)
+      const weatherKeys: TileId[] = ["weather", "precipitation", "rainCloudApproach", "uvIndex", "sunrise", "sunset", "sunriseSunset", "wind", "humidity", "elevation", "magicHour", "sunsetCountdown"];
       if (tileIds.some(id => weatherKeys.includes(id))) {
         promises.push((async () => {
-          const [res, gsiElev] = await Promise.all([
-            fetchWeatherAndMeteorology(lat, lon),
-            fetchGSIElevation(lat, lon)
-          ]);
+          const res = await fetchWeatherAndMeteorology(lat, lon);
 
           const finalSunrise = isSameDay && data.sunrise ? data.sunrise : res.sunrise;
           const finalSunset = isSameDay && data.sunset ? data.sunset : res.sunset;
           const magicHourVal = calculateMagicHour(finalSunrise?.time || "-", finalSunset?.time || "-");
+
+          const gpsAlt = latestGps.current.elevation;
+          let finalElevation = res.elevation;
+          if (gpsAlt !== null && res.elevation !== null) {
+            finalElevation = Math.round((gpsAlt + res.elevation) / 2);
+          } else if (gpsAlt !== null) {
+            finalElevation = gpsAlt;
+          }
 
           setData((prev) => ({
             ...prev,
@@ -373,7 +390,7 @@ export default function App() {
             uvIndex: res.uvIndex,
             sunrise: finalSunrise,
             sunset: finalSunset,
-            gsiElevation: gsiElev !== null ? gsiElev : prev.gsiElevation,
+            elevation: finalElevation !== null ? finalElevation : prev.elevation,
             magicHour: magicHourVal,
           }));
           setLastUpdated((prev) => {
@@ -688,16 +705,13 @@ export default function App() {
       }
     };
 
-    // API 2: 天気・気象・気候 (Open-Meteo & 国土地理院 & マジックアワー)
+    // API 2: 天気・気象・気候 (Open-Meteo & マジックアワー)
     const taskWeather = async () => {
       const weatherTileIds: TileId[] = [
-        "weather", "precipitation", "rainCloudApproach", "uvIndex", "wind", "humidity", "magicHour", "sunriseSunset"
+        "weather", "precipitation", "rainCloudApproach", "uvIndex", "wind", "humidity", "magicHour", "sunriseSunset", "elevation"
       ];
       try {
-        const [res, gsiElev] = await Promise.all([
-          fetchWeatherAndMeteorology(lat, lon),
-          fetchGSIElevation(lat, lon)
-        ]);
+        const res = await fetchWeatherAndMeteorology(lat, lon);
         const stamp = Date.now();
 
         const finalSunrise = isSameDay && data.sunrise ? data.sunrise : res.sunrise;
@@ -708,6 +722,8 @@ export default function App() {
         const gpsAlt = latestGps.current.elevation;
         if (gpsAlt !== null && res.elevation !== null) {
           finalElevation = Math.round((gpsAlt + res.elevation) / 2);
+        } else if (gpsAlt !== null) {
+          finalElevation = gpsAlt;
         }
 
         setData((prev) => ({
@@ -720,14 +736,11 @@ export default function App() {
           sunset: finalSunset,
           wind: res.wind,
           humidity: res.humidity,
-          gsiElevation: gsiElev !== null ? gsiElev : (prev.gsiElevation !== null ? prev.gsiElevation : finalElevation),
+          elevation: finalElevation !== null ? finalElevation : prev.elevation,
           magicHour: magicHourVal,
         }));
         
         const activeTileIds = [...weatherTileIds];
-        if (moved || data.gsiElevation === null) {
-          activeTileIds.push("gsiElevation");
-        }
 
         setLastUpdated((prev) => {
           const next = { ...prev };
@@ -967,7 +980,7 @@ export default function App() {
     const { lat, lon } = currentCoords.current;
 
     // どのデータを更新するかキーによって分類してフェッチ
-    const weatherKeys: TileId[] = ["weather", "precipitation", "rainCloudApproach", "uvIndex", "wind", "humidity", "gsiElevation", "magicHour"];
+    const weatherKeys: TileId[] = ["weather", "precipitation", "rainCloudApproach", "uvIndex", "wind", "humidity", "elevation", "magicHour"];
     const poiKeys: TileId[] = [
       "river", "riverLevel", "trafficStatus",
       "roadStation1", "onsen",
@@ -988,10 +1001,7 @@ export default function App() {
       }
     } else if (weatherKeys.includes(tileId)) {
       try {
-        const [res, gsiElev] = await Promise.all([
-          fetchWeatherAndMeteorology(lat, lon),
-          fetchGSIElevation(lat, lon)
-        ]);
+        const res = await fetchWeatherAndMeteorology(lat, lon);
 
         const magicHourVal = calculateMagicHour(res.sunrise?.time || "-", res.sunset?.time || "-");
         
@@ -999,6 +1009,8 @@ export default function App() {
         const gpsAlt = latestGps.current.elevation;
         if (gpsAlt !== null && res.elevation !== null) {
           finalElevation = Math.round((gpsAlt + res.elevation) / 2);
+        } else if (gpsAlt !== null) {
+          finalElevation = gpsAlt;
         }
 
         setData((prev) => ({
@@ -1009,7 +1021,7 @@ export default function App() {
           uvIndex: res.uvIndex,
           wind: res.wind,
           humidity: res.humidity,
-          gsiElevation: gsiElev !== null ? gsiElev : (prev.gsiElevation !== null ? prev.gsiElevation : finalElevation),
+          elevation: finalElevation !== null ? finalElevation : prev.elevation,
           magicHour: magicHourVal,
         }));
         const updatedStamp = Date.now();
@@ -1190,6 +1202,7 @@ export default function App() {
     if ("geolocation" in navigator) {
       watchId = navigator.geolocation.watchPosition(
         (position) => {
+          if (isPausedRef.current) return;
           latestGps.current = {
             accuracy: position.coords.accuracy,
             speed: position.coords.speed,
@@ -1222,7 +1235,13 @@ export default function App() {
     }
 
     // --- デバイス傾きとコンパスのトラッキング（Ref更新のみで再描画は起こさない） ---
+    let lastOrientationTime = 0;
     const handleOrientation = (e: DeviceOrientationEvent) => {
+      if (isPausedRef.current) return;
+      const now = Date.now();
+      if (now - lastOrientationTime < 200) return; // 200ms未満は間引いてバッテリー負荷を最小に
+      lastOrientationTime = now;
+
       const pitch = e.beta !== null ? Math.round(e.beta) : 0;
       const roll = e.gamma !== null ? Math.round(e.gamma) : 0;
       latestTilt.current = { pitch, roll };
@@ -1389,7 +1408,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <h1 className="text-base sm:text-lg font-black text-white tracking-wider flex items-center gap-1 whitespace-nowrap">
-              旅のお供 <span className="text-[10px] font-normal opacity-70">ver78</span>
+              旅のお供
             </h1>
           </div>
         </div>
@@ -1421,6 +1440,32 @@ export default function App() {
         </div>
       </div>
 
+      {/* カテゴリ選択タブ */}
+      <div className="w-full bg-slate-900/60 border-b border-white/10 px-4 py-1.5 flex gap-1 items-center overflow-x-auto scrollbar-none shrink-0 relative z-20">
+        {[
+          { id: "all", label: "すべて", icon: "🌐" },
+          { id: "environment", label: "環境", icon: "🌲" },
+          { id: "transit", label: "交通", icon: "🚗" },
+          { id: "disaster", label: "防災", icon: "🚨" },
+        ].map((tab) => {
+          const isActive = activeCategory === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveCategory(tab.id as any)}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none shrink-0 border ${
+                isActive
+                  ? "bg-sky-500/15 text-sky-400 border-sky-400/40 shadow-[0_0_10px_rgba(56,189,248,0.1)]"
+                  : "bg-slate-800/40 text-slate-400 border-transparent hover:bg-slate-800/80 hover:text-slate-200"
+              }`}
+            >
+              <span>{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* メインタイグリッド */}
       <main className="flex-grow w-full px-1 py-1 flex flex-col justify-start">
         {/* スマートフォンの画面サイズに応じて3列または4列に切り替わるようにレスポンシブなグリッド設定に変更 */}
@@ -1428,14 +1473,23 @@ export default function App() {
           {tileOrder.map((tileId, idx) => {
             const config = ALL_TILES_CONFIG.find((c) => c.id === tileId);
             if (!config) return null;
+
+            // カテゴリによるフィルタリング
+            if (activeCategory !== "all" && config.category !== activeCategory) {
+              return null;
+            }
+
+            // ドラッグ＆ドロップは "すべて" (all) タブでのみ有効にする（バグと混乱の防止、省電力）
+            const canDrag = activeCategory === "all";
+
             return (
               <div
                 key={config.id}
-                draggable
-                onDragStart={(e) => handleDragStart(e, idx)}
-                onDragOver={(e) => handleDragOver(e, idx)}
-                onDragEnd={handleDragEnd}
-                className="cursor-move select-none active:scale-95 transition-transform"
+                draggable={canDrag}
+                onDragStart={(e) => canDrag && handleDragStart(e, idx)}
+                onDragOver={(e) => canDrag && handleDragOver(e, idx)}
+                onDragEnd={canDrag ? handleDragEnd : undefined}
+                className={`${canDrag ? "cursor-move active:scale-95" : "cursor-default"} select-none transition-transform`}
               >
                 <CompanionTile
                   config={config}
@@ -1453,7 +1507,7 @@ export default function App() {
 
       {/* フッター */}
       <footer className="w-full bg-black/40 border-t border-white/5 py-3 text-center text-[10px] text-slate-500 select-none">
-        旅のお供 ver77 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
+        旅のお供 Version80 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
       </footer>
     </div>
   );

@@ -25,7 +25,7 @@ function getArrow(bearing: number | null, heading: number | null): string {
 
 export const ALL_TILES_CONFIG: TileConfig[] = [
   // =========================================================================
-  // 1. システム・日時（スレートグレー: border-white）
+  // システム・日時（category: "system"）
   // =========================================================================
   {
     id: "currentDate",
@@ -33,6 +33,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     emoji: "📅",
     borderColorClass: "border-white",
     render: (data) => data.currentDate || "-",
+    category: "system",
   },
   {
     id: "currentTime",
@@ -40,10 +41,11 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     emoji: "⏰",
     borderColorClass: "border-white",
     render: (data) => data.currentTime || "-",
+    category: "system",
   },
 
   // =========================================================================
-  // 2. 位置・GPS・物理センサー（スレートグレー: border-white）
+  // 交通・移動・位置（category: "transit"）
   // =========================================================================
   {
     id: "bearing",
@@ -55,6 +57,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const arrow = getArrow(data.bearing.angle, null);
       return `${data.bearing.direction}\n${data.bearing.angle}° ${arrow}`;
     },
+    category: "transit",
   },
   {
     id: "tilt",
@@ -66,6 +69,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const { pitch, roll } = data.tilt;
       return `前後: ${pitch}°\n左右: ${roll}°`;
     },
+    category: "transit",
   },
   {
     id: "gpsAccuracy",
@@ -78,6 +82,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const level = acc <= 10 ? "高" : acc <= 30 ? "中" : "低";
       return `精度：${level}\n${acc}m`;
     },
+    category: "transit",
   },
   {
     id: "speed",
@@ -89,38 +94,23 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const speedKmh = Math.round(data.speed * 3.6);
       return `${speedKmh}km/h`;
     },
+    category: "transit",
   },
   {
-    id: "dbLevel",
-    label: "周囲の静かさ",
-    emoji: "🎙️",
-    borderColorClass: "border-white",
+    id: "accumulatedDistance",
+    label: "累計移動距離",
+    emoji: "🏃",
+    borderColorClass: "border-green",
     render: (data) => {
-      if (data.dbLevel === null || data.dbLevel === undefined) return "-";
-      const db = data.dbLevel;
-      let label = "極めて静か";
-      if (db < 20) label = "極めて静か";
-      else if (db < 40) label = "静か";
-      else if (db < 65) label = "普通";
-      else if (db < 85) label = "騒がしい";
-      else label = "極めて騒がしい";
-      return `${db} dB\n${label}`;
+      if (data.accumulatedDistance === null || data.accumulatedDistance === undefined) return "0m";
+      const dist = data.accumulatedDistance;
+      if (dist < 1000) {
+        return `${Math.round(dist)}m`;
+      }
+      return `${(dist / 1000).toFixed(2)}km`;
     },
+    category: "transit",
   },
-  {
-    id: "gsiElevation",
-    label: "国土地理院 標高",
-    emoji: "🗻",
-    borderColorClass: "border-purple",
-    render: (data) => {
-      if (data.gsiElevation === null || data.gsiElevation === undefined) return "-";
-      return `${Math.round(data.gsiElevation)}m`;
-    },
-  },
-
-  // =========================================================================
-  // 3. 地球物理・目的地方角と距離（スカイブルー: border-blue）
-  // =========================================================================
   {
     id: "prefecturalCapital",
     label: "県庁所在地",
@@ -133,6 +123,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const formattedName = name.includes("(") ? name.replace("(", "\n(") : name;
       return `${formattedName}\n${formatDistance(distance)} ${arrow}`;
     },
+    category: "transit",
   },
   {
     id: "tokyoDistance",
@@ -144,6 +135,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const arrow = getArrow(data.tokyoBearing, heading);
       return `${formatDistance(data.tokyoDistance)} ${arrow}`;
     },
+    category: "transit",
   },
   {
     id: "fujiDistance",
@@ -155,6 +147,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const arrow = getArrow(data.fujiBearing, heading);
       return `${formatDistance(data.fujiDistance)} ${arrow}`;
     },
+    category: "transit",
   },
   {
     id: "seaDistance",
@@ -166,11 +159,23 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const arrow = getArrow(data.seaBearing, heading);
       return `最寄り海\n${formatDistance(data.seaDistance)} ${arrow}`;
     },
+    category: "transit",
   },
 
   // =========================================================================
-  // 4. 気象情報 [Open-Meteo API]（アンバー: border-yellow）
+  // 環境・気象・天体（category: "environment"）
   // =========================================================================
+  {
+    id: "elevation",
+    label: "標高 (気圧・GPS算出)",
+    emoji: "🗻",
+    borderColorClass: "border-purple",
+    render: (data) => {
+      if (data.elevation === null || data.elevation === undefined) return "-";
+      return `${Math.round(data.elevation)}m`;
+    },
+    category: "environment",
+  },
   {
     id: "weather",
     label: "天気、気温",
@@ -186,6 +191,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       }
       return `${info.emoji} ${info.name}\n${Math.round(data.weather.temp)}℃${minMaxText}`;
     },
+    category: "environment",
   },
   {
     id: "precipitation",
@@ -198,6 +204,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const amt = data.precipitation.amount !== null ? `${data.precipitation.amount}mm` : "-";
       return `${prob} / ${amt}`;
     },
+    category: "environment",
   },
   {
     id: "rainCloudApproach",
@@ -211,33 +218,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       }
       return approach;
     },
-  },
-  {
-    id: "uvIndex",
-    label: "紫外線の強さ",
-    emoji: "👒",
-    borderColorClass: "border-yellow",
-    render: (data) => {
-      if (!data.uvIndex) return "-";
-      return `${data.uvIndex.level}\nUV ${data.uvIndex.index.toFixed(1)}`;
-    },
-  },
-  {
-    id: "humidity",
-    label: "湿度",
-    emoji: "💧",
-    borderColorClass: "border-yellow",
-    render: (data) => {
-      if (data.humidity === null) return "-";
-      return `${data.humidity}%`;
-    },
-  },
-  {
-    id: "magicHour",
-    label: "マジックアワー",
-    emoji: "🌅",
-    borderColorClass: "border-yellow",
-    render: (data) => data.magicHour || "-",
+    category: "environment",
   },
   {
     id: "sunriseSunset",
@@ -250,6 +231,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const r2 = data.sunset ? `${data.sunset.time} ${getArrow(data.sunset.bearing, heading)}` : "-";
       return `出: ${r1}\n没: ${r2}`;
     },
+    category: "environment",
   },
   {
     id: "sunsetCountdown",
@@ -281,6 +263,37 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
         return "夜間 (日没済)";
       }
     },
+    category: "environment",
+  },
+  {
+    id: "magicHour",
+    label: "マジックアワー",
+    emoji: "🌅",
+    borderColorClass: "border-yellow",
+    render: (data) => data.magicHour || "-",
+    category: "environment",
+  },
+  {
+    id: "uvIndex",
+    label: "紫外線の強さ",
+    emoji: "👒",
+    borderColorClass: "border-yellow",
+    render: (data) => {
+      if (!data.uvIndex) return "-";
+      return `${data.uvIndex.level}\nUV ${data.uvIndex.index.toFixed(1)}`;
+    },
+    category: "environment",
+  },
+  {
+    id: "humidity",
+    label: "湿度",
+    emoji: "💧",
+    borderColorClass: "border-yellow",
+    render: (data) => {
+      if (data.humidity === null) return "-";
+      return `${data.humidity}%`;
+    },
+    category: "environment",
   },
   {
     id: "wind",
@@ -292,11 +305,8 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const arrow = getArrow(data.wind.bearing, heading);
       return `${data.wind.direction} ${arrow}\n${data.wind.speed}m/s`;
     },
+    category: "environment",
   },
-
-  // =========================================================================
-  // 5. 天体情報（インディゴ: border-indigo）
-  // =========================================================================
   {
     id: "moonAge",
     label: "月齢",
@@ -306,6 +316,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       if (!data.moonAge) return "-";
       return `${data.moonAge.state}\n${data.moonAge.age.toFixed(1)}日`;
     },
+    category: "environment",
   },
   {
     id: "sunPosition",
@@ -317,11 +328,8 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const arrow = getArrow(data.sunPosition.bearing, heading);
       return `${data.sunPosition.cardinal}\n向き ${arrow}`;
     },
+    category: "environment",
   },
-
-  // =========================================================================
-  // 6. 大気・環境情報 [Air Quality API]（ティール: border-emerald）
-  // =========================================================================
   {
     id: "airQuality",
     label: "花粉",
@@ -331,6 +339,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       if (!data.airQuality) return "-";
       return `${data.airQuality.pollenText}`;
     },
+    category: "environment",
   },
   {
     id: "pm25",
@@ -347,6 +356,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       else if (val > 15) label = "やや多い";
       return `${label} ${val} ㎍/㎥`;
     },
+    category: "environment",
   },
   {
     id: "kosa",
@@ -357,11 +367,8 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       if (!data.airQuality || !data.airQuality.kosaText) return "-";
       return data.airQuality.kosaText;
     },
+    category: "environment",
   },
-
-  // =========================================================================
-  // 7. 海洋情報 [Marine API]（ティール: border-emerald）
-  // =========================================================================
   {
     id: "seaTemp",
     label: "海水温",
@@ -371,6 +378,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       if (data.seaTemp === null) return "-";
       return `${data.seaTemp.toFixed(1)}℃`;
     },
+    category: "environment",
   },
   {
     id: "waveInfo",
@@ -382,6 +390,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const { height, period, direction } = data.waveInfo;
       return `${height.toFixed(1)}m (${direction})\n周期: ${period.toFixed(1)}秒`;
     },
+    category: "environment",
   },
   {
     id: "highLowTide",
@@ -394,10 +403,29 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       if (high === "-" && low === "-") return "-";
       return `満潮: ${high}\n干潮: ${low}`;
     },
+    category: "environment",
+  },
+  {
+    id: "dbLevel",
+    label: "周囲の静かさ",
+    emoji: "🎙️",
+    borderColorClass: "border-white",
+    render: (data) => {
+      if (data.dbLevel === null || data.dbLevel === undefined) return "-";
+      const db = data.dbLevel;
+      let label = "極めて静か";
+      if (db < 20) label = "極めて静か";
+      else if (db < 40) label = "静か";
+      else if (db < 65) label = "普通";
+      else if (db < 85) label = "騒がしい";
+      else label = "極めて騒がしい";
+      return `${db} dB\n${label}`;
+    },
+    category: "environment",
   },
 
   // =========================================================================
-  // 8. 防災・社会インフラ（ローズ/レッド: border-red）
+  // 防災・社会インフラ（category: "disaster"）
   // =========================================================================
   {
     id: "earthquake",
@@ -405,6 +433,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     emoji: "🚨",
     borderColorClass: "border-red",
     render: (data) => data.earthquake || "異常なし（安定）",
+    category: "disaster",
   },
   {
     id: "powerUsage",
@@ -416,6 +445,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const { company, rate, usage, capacity } = data.powerUsage;
       return `${company}\n使用率 ${rate}%\n(${Math.round(usage)}/${capacity}万kW)`;
     },
+    category: "disaster",
   },
   {
     id: "trafficStatus",
@@ -423,23 +453,6 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     emoji: "🛣️",
     borderColorClass: "border-red",
     render: (data) => data.trafficStatus || "順調",
-  },
-
-  // =========================================================================
-  // 9. 移動支援・トラッキング・追加パネル（パープル: border-purple / border-orange）
-  // =========================================================================
-  {
-    id: "accumulatedDistance",
-    label: "累計移動距離",
-    emoji: "🏃",
-    borderColorClass: "border-green",
-    render: (data) => {
-      if (data.accumulatedDistance === null || data.accumulatedDistance === undefined) return "0m";
-      const dist = data.accumulatedDistance;
-      if (dist < 1000) {
-        return `${Math.round(dist)}m`;
-      }
-      return `${(dist / 1000).toFixed(2)}km`;
-    },
+    category: "disaster",
   },
 ];
