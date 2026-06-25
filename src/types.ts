@@ -72,6 +72,11 @@ export interface CompanionData {
   attraction2: { name: string; distance: number; bearing: number } | null;
   intersection: { name: string; distance: number; bearing: number } | null;
   dbLevel: number | null;
+
+  currentDate?: string | null;
+  currentTime?: string | null;
+  pm25?: number | null;
+  waveInfo?: { height: number; period: number; direction: string } | null;
 }
 
 export type TileId = keyof CompanionData | string;

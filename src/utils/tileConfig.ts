@@ -5,7 +5,7 @@
 
 import React from "react";
 import { TileConfig, CompanionData } from "../types";
-import { getRelativeArrow, getCardinalDirection } from "./geo";
+import { getRelativeArrow } from "./geo";
 import { getWeatherEmojiAndName } from "./api";
 
 // 距離をきれいにフォーマットする（1km未満ならm、1km以上なら小数点1桁のkm）
@@ -24,6 +24,28 @@ function getArrow(bearing: number | null, heading: number | null): string {
 }
 
 export const ALL_TILES_CONFIG: TileConfig[] = [
+  // ==========================================
+  // ジャンル 0: 現在日時（一番左上と、その右）
+  // ==========================================
+  {
+    id: "currentDate",
+    label: "現在年月日",
+    emoji: "📅",
+    borderColorClass: "border-white",
+    render: (data) => {
+      return data.currentDate || "-";
+    },
+  },
+  {
+    id: "currentTime",
+    label: "現在時間",
+    emoji: "⏰",
+    borderColorClass: "border-white",
+    render: (data) => {
+      return data.currentTime || "-";
+    },
+  },
+
   // ==========================================
   // ジャンル 1: デバイスセンサー & GPS基礎 (API不要)
   // 枠色: 白 (border-white)
@@ -59,17 +81,17 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       if (data.gpsAccuracy === null) return "-";
       const acc = Math.round(data.gpsAccuracy);
       const level = acc <= 10 ? "高" : acc <= 30 ? "中" : "低";
-      return `精度 ${level}\n${acc}m`;
+      return `精度：${level}\n${acc}m`;
     },
   },
   {
     id: "elevation",
-    label: "標高",
+    label: "高度",
     emoji: "⛰️",
     borderColorClass: "border-white",
     render: (data) => {
       if (data.elevation === null) return "-";
-      return `標高\n${Math.round(data.elevation)}m`;
+      return `高度\n${Math.round(data.elevation)}m`;
     },
   },
   {
@@ -78,9 +100,9 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     emoji: "🚗",
     borderColorClass: "border-white",
     render: (data) => {
-      if (data.speed === null) return "速度\n0 km/h";
+      if (data.speed === null) return "0km/h";
       const speedKmh = Math.round(data.speed * 3.6);
-      return `速度\n${speedKmh} km/h`;
+      return `${speedKmh}km/h`;
     },
   },
   {
@@ -113,7 +135,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     render: (data, heading) => {
       if (data.tokyoDistance === null || data.tokyoBearing === null) return "-";
       const arrow = getArrow(data.tokyoBearing, heading);
-      return `東京駅\n${formatDistance(data.tokyoDistance)} ${arrow}`;
+      return `${formatDistance(data.tokyoDistance)} ${arrow}`;
     },
   },
   {
@@ -124,7 +146,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     render: (data, heading) => {
       if (data.fujiDistance === null || data.fujiBearing === null) return "-";
       const arrow = getArrow(data.fujiBearing, heading);
-      return `富士山\n${formatDistance(data.fujiDistance)} ${arrow}`;
+      return `${formatDistance(data.fujiDistance)} ${arrow}`;
     },
   },
   {
@@ -136,7 +158,8 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       if (!data.prefecturalCapital) return "-";
       const { name, distance, bearing } = data.prefecturalCapital;
       const arrow = getArrow(bearing, heading);
-      return `${name}\n${formatDistance(distance)} ${arrow}`;
+      const formattedName = name.includes("(") ? name.replace("(", "\n(") : name;
+      return `${formattedName}\n${formatDistance(distance)} ${arrow}`;
     },
   },
 
@@ -170,9 +193,9 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       let minMaxText = "";
       if (data.weather.minTemp !== undefined && data.weather.minTemp !== null &&
           data.weather.maxTemp !== undefined && data.weather.maxTemp !== null) {
-        minMaxText = `\n${data.weather.minTemp.toFixed(1)}℃〜${data.weather.maxTemp.toFixed(1)}℃`;
+        minMaxText = `\n${Math.round(data.weather.minTemp)}℃〜${Math.round(data.weather.maxTemp)}℃`;
       }
-      return `${info.emoji} ${info.name}\n${data.weather.temp.toFixed(1)}℃${minMaxText}`;
+      return `${info.emoji} ${info.name}\n${Math.round(data.weather.temp)}℃${minMaxText}`;
     },
   },
   {
@@ -246,7 +269,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
 
   // ==========================================
   // ジャンル 6: 自然・大気・海洋
-  // 枠色: 緑 (border-green)、エメラルド (border-emerald)、オレンジ (border-orange)
+  // 枠色: 緑 (border-green)、エメラルド (border-emerald)
   // ==========================================
   {
     id: "airQuality",
@@ -258,10 +281,22 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       return `${data.airQuality.pollenText}`;
     },
   },
-
-  // ==========================================
-  // 「海まで」の前に移動した月齢
-  // ==========================================
+  {
+    id: "pm25",
+    label: "PM2.5",
+    emoji: "🌫️",
+    borderColorClass: "border-green",
+    render: (data) => {
+      if (!data.airQuality || data.airQuality.pm25 === null || data.airQuality.pm25 === undefined) {
+        return "-";
+      }
+      const val = data.airQuality.pm25;
+      let label = "少ない";
+      if (val > 35) label = "非常に多い";
+      else if (val > 15) label = "やや多い";
+      return `${val} ㎍/㎥\n(${label})`;
+    },
+  },
   {
     id: "moonAge",
     label: "月齢",
@@ -272,7 +307,6 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       return `${data.moonAge.state}\n${data.moonAge.age.toFixed(1)}日`;
     },
   },
-
   {
     id: "seaDistance",
     label: "海まで",
@@ -306,52 +340,19 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       return `満潮: ${high}\n干潮: ${low}`;
     },
   },
-
   {
-    id: "river",
-    label: "河川名・距離",
-    emoji: "🏞️",
-    borderColorClass: "border-orange",
+    id: "waveInfo",
+    label: "波情報",
+    emoji: "🏄",
+    borderColorClass: "border-emerald",
     render: (data) => {
-      if (!data.river) return "-";
-      if (data.river.name === "該当なし(5km)") return "該当なし(5km)";
-      return `${data.river.name}\n距離 ${formatDistance(data.river.distance)}`;
-    },
-  },
-  {
-    id: "riverLevel",
-    label: "河川水位",
-    emoji: "💧",
-    borderColorClass: "border-orange",
-    render: (data) => {
-      if (!data.riverLevel) return "-";
-      if (data.riverLevel.name === "該当なし(5km)") {
-        if (data.riverLevel.danger === "平穏") return "平穏";
-        return "該当なし(5km)";
-      }
-      return `${data.riverLevel.name}\n${data.riverLevel.level} (${data.riverLevel.danger})`;
+      if (!data.waveInfo) return "-";
+      const { height, period, direction } = data.waveInfo;
+      return `${height.toFixed(1)}m (${direction})\n周期: ${period.toFixed(1)}秒`;
     },
   },
 
-  // ==========================================
-  // 河川水位の後ろに移動した山の名前
-  // ==========================================
-  {
-    id: "mountain",
-    label: "山の名前・標高・距離",
-    emoji: "⛰️",
-    borderColorClass: "border-blue",
-    render: (data) => {
-      if (!data.mountain) return "-";
-      if (data.mountain.name === "該当なし(5km)") return "該当なし(5km)";
-      return `${data.mountain.name}\n標高 ${Math.round(data.mountain.elevation)}m / ${formatDistance(data.mountain.distance)}`;
-    },
-  },
-
-  // ==========================================
-  // ジャンル 7: 道路・交通
-  // 枠色: 赤 (border-red)
-  // ==========================================
+  // 道路交通
   {
     id: "roadDensity1",
     label: "主要道路1交通密度",
@@ -382,300 +383,6 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const info = data.roadDensity2.info;
       const dist = formatDistance(data.roadDensity2.distance);
       return `${road} (${info})\n${dist}`;
-    },
-  },
-  {
-    id: "station1",
-    label: "最寄り駅1",
-    emoji: "🚃",
-    borderColorClass: "border-red",
-    render: (data, heading) => {
-      if (!data.station1) return "-";
-      if (data.station1.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.station1.bearing, heading);
-      return `${data.station1.name}\n${formatDistance(data.station1.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "station2",
-    label: "最寄り駅2",
-    emoji: "🚃",
-    borderColorClass: "border-red",
-    render: (data, heading) => {
-      if (data.station1?.name === "該当なし(5km)") return "該当なし(5km)";
-      if (!data.station2) return "該当なし(5km)";
-      if (data.station2.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.station2.bearing, heading);
-      return `${data.station2.name}\n${formatDistance(data.station2.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "bus1",
-    label: "バス情報1",
-    emoji: "🚌",
-    borderColorClass: "border-red",
-    render: (data, heading) => {
-      if (!data.bus1) return "-";
-      if (data.bus1.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.bus1.bearing, heading);
-      return `${data.bus1.name}\n${formatDistance(data.bus1.distance)}${arrow} (${data.bus1.nextBus})`;
-    },
-  },
-  {
-    id: "bus2",
-    label: "バス情報2",
-    emoji: "🚌",
-    borderColorClass: "border-red",
-    render: (data, heading) => {
-      if (data.bus1?.name === "該当なし(5km)") return "該当なし(5km)";
-      if (!data.bus2) return "該当なし(5km)";
-      if (data.bus2.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.bus2.bearing, heading);
-      return `${data.bus2.name}\n${formatDistance(data.bus2.distance)}${arrow} (${data.bus2.nextBus})`;
-    },
-  },
-
-  // ==========================================
-  // ジャンル 8: 周辺施設・POI
-  // 枠色: 茶色 (border-brown)
-  // ==========================================
-  {
-    id: "convenience1",
-    label: "コンビニ1",
-    emoji: "🏪",
-    borderColorClass: "border-brown",
-    render: (data, heading) => {
-      if (!data.convenience1) return "-";
-      if (data.convenience1.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.convenience1.bearing, heading);
-      return `${data.convenience1.name}\n${formatDistance(data.convenience1.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "convenience2",
-    label: "コンビニ2",
-    emoji: "🏪",
-    borderColorClass: "border-brown",
-    render: (data, heading) => {
-      if (data.convenience1?.name === "該当なし(5km)") return "該当なし(5km)";
-      if (!data.convenience2) return "該当なし(5km)";
-      if (data.convenience2.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.convenience2.bearing, heading);
-      return `${data.convenience2.name}\n${formatDistance(data.convenience2.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "toilet1",
-    label: "トイレ1",
-    emoji: "🚾",
-    borderColorClass: "border-brown",
-    render: (data, heading) => {
-      if (!data.toilet1) return "-";
-      if (data.toilet1.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.toilet1.bearing, heading);
-      return `${data.toilet1.name}\n${formatDistance(data.toilet1.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "toilet2",
-    label: "トイレ2",
-    emoji: "𚾾",
-    borderColorClass: "border-brown",
-    render: (data, heading) => {
-      if (data.toilet1?.name === "該当なし(5km)") return "該当なし(5km)";
-      if (!data.toilet2) return "該当なし(5km)";
-      if (data.toilet2.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.toilet2.bearing, heading);
-      return `${data.toilet2.name}\n${formatDistance(data.toilet2.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "wifi1",
-    label: "無料Wi-Fi1",
-    emoji: "📶",
-    borderColorClass: "border-brown",
-    render: (data, heading) => {
-      if (!data.wifi1) return "-";
-      if (data.wifi1.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.wifi1.bearing, heading);
-      return `${data.wifi1.name}\n${formatDistance(data.wifi1.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "wifi2",
-    label: "無料Wi-Fi2",
-    emoji: "📶",
-    borderColorClass: "border-brown",
-    render: (data, heading) => {
-      if (data.wifi1?.name === "該当なし(5km)") return "該当なし(5km)";
-      if (!data.wifi2) return "該当なし(5km)";
-      if (data.wifi2.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.wifi2.bearing, heading);
-      return `${data.wifi2.name}\n${formatDistance(data.wifi2.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "gas1",
-    label: "ガソリン1",
-    emoji: "⛽",
-    borderColorClass: "border-brown",
-    render: (data, heading) => {
-      if (!data.gas1) return "-";
-      if (data.gas1.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.gas1.bearing, heading);
-      return `${data.gas1.name}\n${formatDistance(data.gas1.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "gas2",
-    label: "ガソリン2",
-    emoji: "⛽",
-    borderColorClass: "border-brown",
-    render: (data, heading) => {
-      if (data.gas1?.name === "該当なし(5km)") return "該当なし(5km)";
-      if (!data.gas2) return "該当なし(5km)";
-      if (data.gas2.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.gas2.bearing, heading);
-      return `${data.gas2.name}\n${formatDistance(data.gas2.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "parking1",
-    label: "駐車場1",
-    emoji: "🅿️",
-    borderColorClass: "border-brown",
-    render: (data, heading) => {
-      if (!data.parking1) return "-";
-      if (data.parking1.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.parking1.bearing, heading);
-      return `${data.parking1.name}\n${formatDistance(data.parking1.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "parking2",
-    label: "駐車場2",
-    emoji: "🅿️",
-    borderColorClass: "border-brown",
-    render: (data, heading) => {
-      if (data.parking1?.name === "該当なし(5km)") return "該当なし(5km)";
-      if (!data.parking2) return "該当なし(5km)";
-      if (data.parking2.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.parking2.bearing, heading);
-      return `${data.parking2.name}\n${formatDistance(data.parking2.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "roadStation1",
-    label: "道の駅1",
-    emoji: "🏡",
-    borderColorClass: "border-brown",
-    render: (data, heading) => {
-      if (!data.roadStation1) return "-";
-      if (data.roadStation1.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.roadStation1.bearing, heading);
-      return `${data.roadStation1.name}\n${formatDistance(data.roadStation1.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "roadStation2",
-    label: "道の駅2",
-    emoji: "🏡",
-    borderColorClass: "border-brown",
-    render: (data, heading) => {
-      if (data.roadStation1?.name === "該当なし(5km)") return "該当なし(5km)";
-      if (!data.roadStation2) return "該当なし(5km)";
-      if (data.roadStation2.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.roadStation2.bearing, heading);
-      return `${data.roadStation2.name}\n${formatDistance(data.roadStation2.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "hotel",
-    label: "最寄りホテル",
-    emoji: "🏨",
-    borderColorClass: "border-brown",
-    render: (data) => {
-      if (!data.hotel) return "-";
-      if (data.hotel.name === "該当なし(5km)") return "該当なし(5km)";
-      return `${data.hotel.name}\n${formatDistance(data.hotel.distance)}`;
-    },
-  },
-  {
-    id: "guesthouse",
-    label: "最寄りゲストハウス",
-    emoji: "🏡",
-    borderColorClass: "border-brown",
-    render: (data) => {
-      if (!data.guesthouse) return "-";
-      if (data.guesthouse.name === "該当なし(5km)") return "該当なし(5km)";
-      return `${data.guesthouse.name}\n${formatDistance(data.guesthouse.distance)}`;
-    },
-  },
-  {
-    id: "gourmet1",
-    label: "グルメ情報1",
-    emoji: "🍜",
-    borderColorClass: "border-brown",
-    render: (data, heading) => {
-      if (!data.gourmet1) return "-";
-      if (data.gourmet1.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.gourmet1.bearing, heading);
-      return `${data.gourmet1.name}\n★${data.gourmet1.rating.toFixed(1)} / ${formatDistance(data.gourmet1.distance)}${arrow}`;
-    },
-  },
-  {
-    id: "gourmet2",
-    label: "グルメ情報2",
-    emoji: "🍜",
-    borderColorClass: "border-brown",
-    render: (data, heading) => {
-      if (data.gourmet1?.name === "該当なし(5km)") return "該当なし(5km)";
-      if (!data.gourmet2) return "該当なし(5km)";
-      if (data.gourmet2.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.gourmet2.bearing, heading);
-      return `${data.gourmet2.name}\n★${data.gourmet2.rating.toFixed(1)} / ${formatDistance(data.gourmet2.distance)}${arrow}`;
-    },
-  },
-
-  // ==========================================
-  // ジャンル 9: 山・観光地
-  // 枠色: 青 (border-blue) / 紫 (border-purple)
-  // ==========================================
-  {
-    id: "attraction1",
-    label: "観光地1",
-    emoji: "🎡",
-    borderColorClass: "border-purple",
-    render: (data, heading) => {
-      if (!data.attraction1) return "-";
-      if (data.attraction1.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.attraction1.bearing, heading);
-      return `${data.attraction1.name}\n${formatDistance(data.attraction1.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "attraction2",
-    label: "観光地2",
-    emoji: "🎡",
-    borderColorClass: "border-purple",
-    render: (data, heading) => {
-      if (data.attraction1?.name === "該当なし(5km)") return "該当なし(5km)";
-      if (!data.attraction2) return "該当なし(5km)";
-      if (data.attraction2.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.attraction2.bearing, heading);
-      return `${data.attraction2.name}\n${formatDistance(data.attraction2.distance)} ${arrow}`;
-    },
-  },
-  {
-    id: "intersection",
-    label: "付近の交差点",
-    emoji: "🚦",
-    borderColorClass: "border-blue",
-    render: (data, heading) => {
-      if (!data.intersection) return "-";
-      if (data.intersection.name === "該当なし(5km)") return "該当なし(5km)";
-      const arrow = getArrow(data.intersection.bearing, heading);
-      return `${data.intersection.name}\n${formatDistance(data.intersection.distance)} ${arrow}`;
     },
   },
 ];

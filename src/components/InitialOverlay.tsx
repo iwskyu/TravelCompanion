@@ -86,10 +86,10 @@ export function InitialOverlay({ onStart }: InitialOverlayProps) {
             transition={{ delay: 0.2, duration: 0.5 }}
             className="text-3xl sm:text-4xl font-extrabold tracking-wider text-white"
           >
-            旅のお供 <span className="text-blue-400 font-normal text-lg">ver76</span>
+            旅のお供 <span className="text-blue-400 font-normal text-lg">ver77</span>
           </motion.h1>
           <p className="text-sm text-slate-400">
-            あなたの旅路を52のリアルタイム情報で網羅・サポート
+            あなたの旅路を厳選されたリアルタイム情報で網羅・サポート
           </p>
         </div>
 

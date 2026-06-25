@@ -86,6 +86,10 @@ const INITIAL_COMPANION_DATA: CompanionData = {
   attraction2: null,
   intersection: null,
   dbLevel: null,
+  currentDate: null,
+  currentTime: null,
+  pm25: null,
+  waveInfo: null,
 };
 
 export default function App() {
@@ -107,6 +111,47 @@ export default function App() {
   // タイルごとの最終更新日時（タイムスタンプ）を保持。
   // これを使って各タイルの黄色いフラッシュ演出を制御する。
   const [lastUpdated, setLastUpdated] = useState<Record<TileId, number>>({});
+  const [isAddressFlashing, setIsAddressFlashing] = useState(false);
+
+  useEffect(() => {
+    if (lastUpdated.address > 0) {
+      setIsAddressFlashing(true);
+      const timer = setTimeout(() => setIsAddressFlashing(false), 750);
+      return () => clearTimeout(timer);
+    }
+  }, [lastUpdated.address]);
+
+  // リアルタイム現在日時更新（現在年月日、現在時間のパネル用）
+  useEffect(() => {
+    const getFormattedDateTime = () => {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const day = String(now.getDate()).padStart(2, "0");
+      const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+      const weekday = weekdays[now.getDay()];
+      const hours = String(now.getHours()).padStart(2, "0");
+      const minutes = String(now.getMinutes()).padStart(2, "0");
+
+      return {
+        currentDate: `${year}/${month}/${day}\n(${weekday})`,
+        currentTime: `${hours}:${minutes}`,
+      };
+    };
+
+    const updateTime = () => {
+      const dt = getFormattedDateTime();
+      setData((prev) => ({
+        ...prev,
+        currentDate: dt.currentDate,
+        currentTime: dt.currentTime,
+      }));
+    };
+
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // リアルタイムセンサー情報保持用のRef（スロットリング更新用）
   const latestTilt = useRef<{ pitch: number; roll: number }>({ pitch: 0, roll: 0 });
@@ -285,19 +330,21 @@ export default function App() {
         })());
       }
 
-      // 4. 海水温
-      if (tileIds.includes("seaTemp")) {
+      // 4. 海水温・波情報
+      if (tileIds.includes("seaTemp") || tileIds.includes("waveInfo")) {
         // 大きく移動していない、かつ既にデータがある場合はスキップ
         if (moved || !data.seaTemp) {
           promises.push((async () => {
             const res = await fetchSeaTemperature(lat, lon);
             setData((prev) => ({
               ...prev,
-              seaTemp: res,
+              seaTemp: res.seaTemp,
+              waveInfo: res.waveInfo,
             }));
             setLastUpdated((prev) => ({
               ...prev,
               seaTemp: nowStamp,
+              waveInfo: nowStamp,
             }));
           })());
         }
@@ -397,10 +444,29 @@ export default function App() {
     let seaBear = data.seaBearing;
     if (updateGeoDistance) {
       const seaBases = [
-        { name: "太平洋(相模湾)", lat: 35.2, lon: 139.3 },
-        { name: "日本海", lat: 37.9, lon: 139.1 },
-        { name: "瀬戸内海", lat: 34.3, lon: 134.0 },
-        { name: "オホーツク海", lat: 44.0, lon: 144.0 },
+        // 東京湾、横浜港、湘南、相模湾周辺
+        { name: "東京湾", lat: 35.5, lon: 139.8 },
+        { name: "横浜港", lat: 35.45, lon: 139.65 }, // 横浜駅近くの海（これで横浜駅からの距離が大幅に近くなります）
+        { name: "湘南海岸", lat: 35.31, lon: 139.47 },
+        { name: "相模湾", lat: 35.25, lon: 139.15 },
+        { name: "駿河湾", lat: 34.9, lon: 138.5 },
+        { name: "伊勢湾", lat: 34.7, lon: 136.8 },
+        { name: "大阪湾", lat: 34.6, lon: 135.3 },
+        { name: "博多湾", lat: 33.63, lon: 130.35 },
+        { name: "鹿児島湾", lat: 31.5, lon: 130.6 },
+        { name: "仙台湾", lat: 38.2, lon: 141.1 },
+        { name: "太平洋(銚子)", lat: 35.73, lon: 140.85 },
+        { name: "太平洋(浜松)", lat: 34.67, lon: 137.7 },
+        { name: "太平洋(室戸岬)", lat: 33.25, lon: 134.18 },
+        { name: "太平洋(足摺岬)", lat: 32.7, lon: 133.0 },
+        { name: "日本海(新潟)", lat: 37.95, lon: 139.0 },
+        { name: "日本海(金沢)", lat: 36.65, lon: 136.6 },
+        { name: "日本海(境港)", lat: 35.55, lon: 133.25 },
+        { name: "瀬戸内海(広島)", lat: 34.3, lon: 132.45 },
+        { name: "瀬戸内海(高松)", lat: 34.35, lon: 134.05 },
+        { name: "オホーツク海(網走)", lat: 44.03, lon: 144.27 },
+        { name: "内浦湾(室蘭)", lat: 42.35, lon: 140.97 },
+        { name: "石狩湾(小樽)", lat: 43.2, lon: 141.0 },
       ];
       let minDist = Infinity;
       let targetBase = seaBases[0];
@@ -556,7 +622,7 @@ export default function App() {
       }
     };
 
-    // API 4: 海水温 (Open-Meteo Marine)
+    // API 4: 海水温・波情報 (Open-Meteo Marine)
     // 大きく移動していなければフェッチをスキップ
     const taskSeaTemp = async () => {
       if (!moved && data.seaTemp) {
@@ -568,11 +634,13 @@ export default function App() {
         const stamp = Date.now();
         setData((prev) => ({
           ...prev,
-          seaTemp: res,
+          seaTemp: res.seaTemp,
+          waveInfo: res.waveInfo,
         }));
         setLastUpdated((prev) => ({
           ...prev,
           seaTemp: stamp,
+          waveInfo: stamp,
         }));
       } catch (err) {
         console.error("fetchSeaTemperature failed in triggerFullUpdate", err);
@@ -923,51 +991,48 @@ export default function App() {
   // 天気のおすすめ絵文字
   const weatherEmoji = data.weather ? getWeatherEmojiAndName(data.weather.code).emoji : "🧭";
 
+  const addressBgClass = isAddressFlashing
+    ? "bg-yellow-400 text-slate-950 border-yellow-300"
+    : "bg-slate-950/85 text-white border-white/10";
+
   return (
     <div className="min-h-screen animate-travel-bg text-white font-sans flex flex-col overflow-x-hidden">
       {/* ヘッダーエリア */}
-      <header className="w-full h-[60px] bg-black/20 border-b border-white/20 relative z-40 px-5 flex items-center justify-between shadow-lg shrink-0">
+      <header className="w-full h-[46px] bg-black/20 border-b border-white/20 relative z-40 px-5 flex items-center justify-between shadow-lg shrink-0">
         {/* ロゴと現在地の概要 */}
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-md shadow-blue-500/25">
-            <Compass className="w-5 h-5 text-white animate-[spin_15s_linear_infinite]" />
+        <div className="flex items-center gap-2.5">
+          <div className="w-6.5 h-6.5 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-md flex items-center justify-center shadow-md shadow-blue-500/25">
+            <Compass className="w-4 h-4 text-white animate-[spin_15s_linear_infinite]" />
           </div>
           <div className="flex items-center gap-2">
-            <h1 className="text-lg sm:text-xl font-black text-white tracking-wider flex items-center gap-1.5">
-              旅のお供 <span className="text-xs font-normal opacity-70">ver76</span>
+            <h1 className="text-base sm:text-lg font-black text-white tracking-wider flex items-center gap-1 whitespace-nowrap">
+              旅のお供 <span className="text-[10px] font-normal opacity-70">ver77</span>
             </h1>
           </div>
         </div>
 
-        {/* 環境音＆一括更新エリア */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          {/* 表示拡大スクロールボタン */}
-          <button
-            onClick={handleScrollToContent}
-            className="flex items-center gap-1.5 bg-sky-600/30 hover:bg-sky-600/50 active:scale-95 transition-all font-bold border border-sky-500 px-3 py-1.5 rounded-lg text-xs sm:text-sm text-sky-200 shrink-0 select-none cursor-pointer"
-            title="画面をスクロールしてヘッダーやアドレスバーを隠し、表示領域を広げます"
-          >
-            <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span>画面を広げる</span>
-          </button>
-
+        {/* 一括更新エリア */}
+        <div className="flex items-center gap-2">
           {/* 強制一括更新ボタン */}
           <button
             onClick={triggerFullUpdate}
             disabled={isUpdating}
-            className="flex items-center gap-2 bg-white/15 hover:bg-white/25 active:scale-95 disabled:opacity-50 transition-all font-bold border-2 border-white px-3 sm:px-5 py-1.5 rounded-lg text-xs sm:text-base text-white shrink-0 select-none cursor-pointer"
+            className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 active:scale-95 disabled:opacity-50 transition-all font-bold border border-white px-3 py-1 rounded-md text-xs text-white shrink-0 select-none cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isUpdating ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isUpdating ? "animate-spin" : ""}`} />
             <span>一括更新</span>
           </button>
         </div>
       </header>
 
-      {/* 住所表示ステータスバー (スクロールしても画面最上部に固定されるよう sticky top-0 に設定) */}
-      <div ref={mainRef} className="sticky top-0 z-30 w-full bg-slate-950/85 backdrop-blur-md border-b border-white/10 px-4 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs">
+      {/* 住所表示パネル (スクロール時画面最上部固定、更新時は黄色く光るフラッシュ演出) */}
+      <div
+        ref={mainRef}
+        className={`sticky top-0 z-30 w-full px-4 py-2 flex items-center justify-between gap-1.5 text-xs border-b backdrop-blur-md transition-colors duration-300 ${addressBgClass}`}
+      >
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-sky-400 shrink-0">📍</span>
-          <span className="text-slate-200 truncate font-semibold">
+          <span className={isAddressFlashing ? "text-slate-950" : "text-sky-400"}>📍</span>
+          <span className={`truncate font-bold tracking-wide text-sm ${isAddressFlashing ? "text-slate-950" : "text-slate-200"}`}>
             {data.zipcode ? `〒${data.zipcode} ` : ""}{data.address || "現在地を取得中..."}
           </span>
         </div>
@@ -992,7 +1057,7 @@ export default function App() {
 
       {/* フッター */}
       <footer className="w-full bg-black/40 border-t border-white/5 py-3 text-center text-[10px] text-slate-500 select-none">
-        旅のお供 ver76 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
+        旅のお供 ver77 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
       </footer>
     </div>
   );

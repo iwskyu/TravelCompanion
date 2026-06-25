@@ -35,14 +35,56 @@ export function CompanionTile({
   const valueString = typeof valueContent === "string" ? valueContent : "";
 
   const prevValueRef = React.useRef<string>(valueString);
+  const prevTiltRef = React.useRef<{ pitch: number; roll: number } | null>(null);
+  const prevBearingRef = React.useRef<number | null>(null);
 
   // データの最終更新時刻が変わったら一時的に黄色にする（フラッシュ演出）
   useEffect(() => {
-    // 傾き、方角、周囲の静かさは黄色に光らせない（常時光ることになるため）
-    if (config.id === "tilt" || config.id === "bearing" || config.id === "dbLevel") {
+    // dbLevel はフラッシュさせない
+    if (config.id === "dbLevel") {
       return;
     }
-    
+
+    // 傾きは30°以上変化したときだけフラッシュ
+    if (config.id === "tilt") {
+      if (data.tilt) {
+        const { pitch, roll } = data.tilt;
+        if (prevTiltRef.current) {
+          const dPitch = Math.abs(pitch - prevTiltRef.current.pitch);
+          const dRoll = Math.abs(roll - prevTiltRef.current.roll);
+          if (dPitch >= 30 || dRoll >= 30) {
+            setIsFlashing(true);
+            const timer = setTimeout(() => setIsFlashing(false), 750);
+            prevTiltRef.current = { pitch, roll };
+            return () => clearTimeout(timer);
+          }
+        } else {
+          prevTiltRef.current = { pitch, roll };
+        }
+      }
+      return;
+    }
+
+    // 方角は30°以上変化したときだけフラッシュ
+    if (config.id === "bearing") {
+      if (data.bearing) {
+        const angle = data.bearing.angle;
+        if (prevBearingRef.current !== null) {
+          const dAngle = Math.abs(angle - prevBearingRef.current);
+          const diff = Math.min(dAngle, 360 - dAngle);
+          if (diff >= 30) {
+            setIsFlashing(true);
+            const timer = setTimeout(() => setIsFlashing(false), 750);
+            prevBearingRef.current = angle;
+            return () => clearTimeout(timer);
+          }
+        } else {
+          prevBearingRef.current = angle;
+        }
+      }
+      return;
+    }
+
     const hasChanged = prevValueRef.current !== valueString;
     prevValueRef.current = valueString;
 
@@ -53,7 +95,7 @@ export function CompanionTile({
       }, 750); // 0.75秒間黄色（半分の時間）
       return () => clearTimeout(timer);
     }
-  }, [lastUpdatedTime, valueString, config.id]);
+  }, [lastUpdatedTime, valueString, config.id, data.tilt, data.bearing]);
 
   // 文字数に応じてフォントサイズを決定。枠内に収まるできるだけ大きいサイズにし、統一感を出す
   // ユーザー要望：全パネルの値、文字をできるだけ大きく、見切れ「…」禁止
@@ -77,17 +119,8 @@ export function CompanionTile({
 
   let fontSizeClass = getFontSizeClass(valueString);
   if (config.id === "dbLevel") {
-    if (fontSizeClass.includes("text-[18px]")) {
-      fontSizeClass = "text-[17px] sm:text-[19px] md:text-[21px] font-black leading-tight";
-    } else if (fontSizeClass.includes("text-[15px]")) {
-      fontSizeClass = "text-[14px] sm:text-[16px] md:text-[18px] font-black leading-tight";
-    } else if (fontSizeClass.includes("text-[12px]")) {
-      fontSizeClass = "text-[11px] sm:text-[13px] md:text-[15px] font-bold leading-snug";
-    } else if (fontSizeClass.includes("text-[10px]")) {
-      fontSizeClass = "text-[9px] sm:text-[10px] md:text-[11px] font-bold leading-normal";
-    } else {
-      fontSizeClass = "text-[7.5px] sm:text-[8px] md:text-[10px] font-bold leading-normal";
-    }
+    // 周囲の静かさの値はフォントサイズを明確に小さくする
+    fontSizeClass = "text-[11px] sm:text-[12px] md:text-[13px] font-bold leading-snug";
   }
 
   // 枠のグラデーション色を取得
