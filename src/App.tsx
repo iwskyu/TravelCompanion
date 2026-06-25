@@ -13,7 +13,13 @@ import {
   fetchAirQualityAndPollen,
   fetchSeaTemperature,
   fetchPOIFromOverpass,
-  getWeatherEmojiAndName
+  getWeatherEmojiAndName,
+  fetchGSIElevation,
+  calculateMagicHour,
+  fetchEarthquakeInfo,
+  calculateMagneticDeclination,
+  calculatePowerUsage,
+  calculateTrafficStatus
 } from "./utils/api";
 import {
   calculateDistance,
@@ -90,6 +96,12 @@ const INITIAL_COMPANION_DATA: CompanionData = {
   currentTime: null,
   pm25: null,
   waveInfo: null,
+  gsiElevation: null,
+  magicHour: null,
+  earthquake: null,
+  magneticDeclination: null,
+  powerUsage: null,
+  trafficStatus: null,
 };
 
 export default function App() {
@@ -134,7 +146,7 @@ export default function App() {
       const minutes = String(now.getMinutes()).padStart(2, "0");
 
       return {
-        currentDate: `${year}/${month}/${day}\n(${weekday})`,
+        currentDate: `${year}/${month}/${day} (${weekday})`,
         currentTime: `${hours}:${minutes}`,
       };
     };
@@ -279,21 +291,36 @@ export default function App() {
         }
       }
 
-      // 2. 天気・気象・気候
-      const weatherKeys: TileId[] = ["weather", "precipitation", "rainCloudApproach", "uvIndex", "sunrise", "sunset", "sunriseSunset", "wind", "humidity", "elevation"];
+      // 2. 天気・気象・気候 (マジックアワー、地理院標高も連動)
+      const weatherKeys: TileId[] = ["weather", "precipitation", "rainCloudApproach", "uvIndex", "sunrise", "sunset", "sunriseSunset", "wind", "humidity", "elevation", "gsiElevation", "magicHour"];
       if (tileIds.some(id => weatherKeys.includes(id))) {
         promises.push((async () => {
-          const res = await fetchWeatherAndMeteorology(lat, lon);
+          const [res, gsiElev] = await Promise.all([
+            fetchWeatherAndMeteorology(lat, lon),
+            fetchGSIElevation(lat, lon)
+          ]);
+
+          const finalSunrise = isSameDay && data.sunrise ? data.sunrise : res.sunrise;
+          const finalSunset = isSameDay && data.sunset ? data.sunset : res.sunset;
+          const magicHourVal = calculateMagicHour(finalSunrise?.time || "-", finalSunset?.time || "-");
+
+          let finalElevation = res.elevation;
+          const gpsAlt = latestGps.current.elevation;
+          if (gpsAlt !== null && res.elevation !== null) {
+            finalElevation = Math.round((gpsAlt + res.elevation) / 2);
+          }
+
           setData((prev) => ({
             ...prev,
             weather: res.weather,
             precipitation: res.precipitation,
             rainCloudApproach: res.rainCloudApproach,
             uvIndex: res.uvIndex,
-            // 日の出、日没、標高は「丸一日変わらない/一度出せば十分」なため、すでに値があれば既存のものを優先（上書きしない、再フェッチもしない）
-            sunrise: isSameDay && prev.sunrise ? prev.sunrise : res.sunrise,
-            sunset: isSameDay && prev.sunset ? prev.sunset : res.sunset,
-            elevation: !moved && prev.elevation !== null ? prev.elevation : (latestGps.current.elevation !== null ? latestGps.current.elevation : (res.elevation !== null ? res.elevation : prev.elevation)),
+            sunrise: finalSunrise,
+            sunset: finalSunset,
+            elevation: !moved && prev.elevation !== null ? prev.elevation : (finalElevation !== null ? finalElevation : prev.elevation),
+            gsiElevation: gsiElev !== null ? gsiElev : (prev.gsiElevation !== null ? prev.gsiElevation : finalElevation),
+            magicHour: magicHourVal,
           }));
           setLastUpdated((prev) => {
             const next = { ...prev };
@@ -312,6 +339,51 @@ export default function App() {
             });
             return next;
           });
+        })());
+      }
+
+      // 2.5. 直近の地震・防災情報
+      if (tileIds.includes("earthquake")) {
+        promises.push((async () => {
+          const res = await fetchEarthquakeInfo();
+          setData((prev) => ({
+            ...prev,
+            earthquake: res,
+          }));
+          setLastUpdated((prev) => ({
+            ...prev,
+            earthquake: nowStamp,
+          }));
+        })());
+      }
+
+      // 2.6. 電力使用状況
+      if (tileIds.includes("powerUsage")) {
+        promises.push((async () => {
+          const res = calculatePowerUsage(lat, lon);
+          setData((prev) => ({
+            ...prev,
+            powerUsage: res,
+          }));
+          setLastUpdated((prev) => ({
+            ...prev,
+            powerUsage: nowStamp,
+          }));
+        })());
+      }
+
+      // 2.7. 磁気偏角
+      if (tileIds.includes("magneticDeclination")) {
+        promises.push((async () => {
+          const res = calculateMagneticDeclination(lat, lon);
+          setData((prev) => ({
+            ...prev,
+            magneticDeclination: res,
+          }));
+          setLastUpdated((prev) => ({
+            ...prev,
+            magneticDeclination: nowStamp,
+          }));
         })());
       }
 
@@ -352,7 +424,7 @@ export default function App() {
 
       // 5. 周辺POI (Overpass API)
       const poiKeys: TileId[] = [
-        "river", "riverLevel", "roadDensity1", "roadDensity2",
+        "river", "riverLevel", "roadDensity1", "roadDensity2", "trafficStatus",
         "convenience1", "convenience2", "toilet1", "toilet2", "wifi1", "wifi2",
         "gas1", "gas2", "parking1", "parking2", "roadStation1", "roadStation2",
         "hotel", "guesthouse", "station1", "station2", "bus1", "bus2",
@@ -363,9 +435,12 @@ export default function App() {
         if (moved || !data.river) {
           promises.push((async () => {
             const res = await fetchPOIFromOverpass(lat, lon);
+            const speedKmh = latestGps.current.speed !== null ? Math.round(latestGps.current.speed * 3.6) : 0;
+            const traffic = calculateTrafficStatus(lat, lon, speedKmh);
             setData((prev) => ({
               ...prev,
               ...res,
+              trafficStatus: traffic,
             }));
             setLastUpdated((prev) => {
               const next = { ...prev };
@@ -561,35 +636,49 @@ export default function App() {
       }
     };
 
-    // API 2: 天気・気象・気候 (Open-Meteo)
-    // 常に最新データを取得しますが、1日中不変の日の出・日の入り、大きく移動しないと変わらない標高は、
-    // すでに有効な値があれば光らせない（lastUpdatedに含めない）ことでチカチカを防止。
+    // API 2: 天気・気象・気候 (Open-Meteo & 国土地理院 & マジックアワー)
     const taskWeather = async () => {
       try {
-        const res = await fetchWeatherAndMeteorology(lat, lon);
+        const [res, gsiElev] = await Promise.all([
+          fetchWeatherAndMeteorology(lat, lon),
+          fetchGSIElevation(lat, lon)
+        ]);
         const stamp = Date.now();
+
+        const finalSunrise = isSameDay && data.sunrise ? data.sunrise : res.sunrise;
+        const finalSunset = isSameDay && data.sunset ? data.sunset : res.sunset;
+        const magicHourVal = calculateMagicHour(finalSunrise?.time || "-", finalSunset?.time || "-");
+
+        let finalElevation = res.elevation;
+        const gpsAlt = latestGps.current.elevation;
+        if (gpsAlt !== null && res.elevation !== null) {
+          finalElevation = Math.round((gpsAlt + res.elevation) / 2);
+        }
+
         setData((prev) => ({
           ...prev,
           weather: res.weather,
           precipitation: res.precipitation,
           rainCloudApproach: res.rainCloudApproach,
           uvIndex: res.uvIndex,
-          sunrise: isSameDay && prev.sunrise ? prev.sunrise : res.sunrise,
-          sunset: isSameDay && prev.sunset ? prev.sunset : res.sunset,
+          sunrise: finalSunrise,
+          sunset: finalSunset,
           wind: res.wind,
           humidity: res.humidity,
-          elevation: !moved && prev.elevation !== null ? prev.elevation : (latestGps.current.elevation !== null ? latestGps.current.elevation : (res.elevation !== null ? res.elevation : prev.elevation)),
+          elevation: !moved && prev.elevation !== null ? prev.elevation : (finalElevation !== null ? finalElevation : prev.elevation),
+          gsiElevation: gsiElev !== null ? gsiElev : (prev.gsiElevation !== null ? prev.gsiElevation : finalElevation),
+          magicHour: magicHourVal,
         }));
         
         const weatherTileIds: TileId[] = [
-          "weather", "precipitation", "rainCloudApproach", "uvIndex", "wind", "humidity"
+          "weather", "precipitation", "rainCloudApproach", "uvIndex", "wind", "humidity", "magicHour"
         ];
         
         if (!isSameDay || !data.sunrise) {
           weatherTileIds.push("sunrise", "sunset", "sunriseSunset");
         }
         if (moved || data.elevation === null) {
-          weatherTileIds.push("elevation");
+          weatherTileIds.push("elevation", "gsiElevation");
         }
 
         setLastUpdated((prev) => {
@@ -647,8 +736,7 @@ export default function App() {
       }
     };
 
-    // API 5: 周辺POI (Overpass API)
-    // 大きく移動していなければAPIフェッチを完全にスキップ（超低消費電力・低トラフィック化）
+    // API 5: 周辺POI (Overpass API & 道路交通状況)
     const taskPOI = async () => {
       if (!moved && data.river) {
         console.log("Battery Save: Skip Overpass API because position hasn't changed significantly.");
@@ -657,13 +745,17 @@ export default function App() {
       try {
         const res = await fetchPOIFromOverpass(lat, lon);
         const stamp = Date.now();
+        const speedKmh = latestGps.current.speed !== null ? Math.round(latestGps.current.speed * 3.6) : 0;
+        const traffic = calculateTrafficStatus(lat, lon, speedKmh);
+        
         setData((prev) => ({
           ...prev,
           ...res,
+          trafficStatus: traffic,
         }));
         
         const poiTileIds: TileId[] = [
-          "river", "riverLevel", "roadDensity1", "roadDensity2",
+          "river", "riverLevel", "roadDensity1", "roadDensity2", "trafficStatus",
           "convenience1", "convenience2", "toilet1", "toilet2", "wifi1", "wifi2",
           "gas1", "gas2", "parking1", "parking2", "roadStation1", "roadStation2",
           "hotel", "guesthouse", "station1", "station2", "bus1", "bus2",
@@ -681,13 +773,70 @@ export default function App() {
       }
     };
 
+    // API 6: 直近の地震・防災情報 (P2Pquake)
+    const taskEarthquake = async () => {
+      try {
+        const res = await fetchEarthquakeInfo();
+        const stamp = Date.now();
+        setData((prev) => ({
+          ...prev,
+          earthquake: res,
+        }));
+        setLastUpdated((prev) => ({
+          ...prev,
+          earthquake: stamp,
+        }));
+      } catch (err) {
+        console.error("fetchEarthquakeInfo failed in triggerFullUpdate", err);
+      }
+    };
+
+    // API 7: 電力使用状況
+    const taskPowerUsage = async () => {
+      try {
+        const res = calculatePowerUsage(lat, lon);
+        const stamp = Date.now();
+        setData((prev) => ({
+          ...prev,
+          powerUsage: res,
+        }));
+        setLastUpdated((prev) => ({
+          ...prev,
+          powerUsage: stamp,
+        }));
+      } catch (err) {
+        console.error("calculatePowerUsage failed in triggerFullUpdate", err);
+      }
+    };
+
+    // API 8: 磁気偏角
+    const taskMagneticDeclination = async () => {
+      try {
+        const res = calculateMagneticDeclination(lat, lon);
+        const stamp = Date.now();
+        setData((prev) => ({
+          ...prev,
+          magneticDeclination: res,
+        }));
+        setLastUpdated((prev) => ({
+          ...prev,
+          magneticDeclination: stamp,
+        }));
+      } catch (err) {
+        console.error("calculateMagneticDeclination failed in triggerFullUpdate", err);
+      }
+    };
+
     // すべてのAPIリクエストを非同期で開始し、届いた順に個別にアップデート
     Promise.allSettled([
       taskAddress(),
       taskWeather(),
       taskAirQuality(),
       taskSeaTemp(),
-      taskPOI()
+      taskPOI(),
+      taskEarthquake(),
+      taskPowerUsage(),
+      taskMagneticDeclination()
     ]).finally(() => {
       setIsUpdating(false);
       lastUpdatedCoords.current = { lat, lon };
@@ -717,9 +866,9 @@ export default function App() {
     const { lat, lon } = currentCoords.current || { lat: 35.6895, lon: 139.6917 };
 
     // どのデータを更新するかキーによって分類してフェッチ
-    const weatherKeys = ["weather", "precipitation", "rainCloudApproach", "uvIndex", "wind", "humidity", "elevation"];
+    const weatherKeys = ["weather", "precipitation", "rainCloudApproach", "uvIndex", "wind", "humidity", "elevation", "gsiElevation", "magicHour"];
     const poiKeys = [
-      "river", "riverLevel", "roadDensity1", "roadDensity2",
+      "river", "riverLevel", "roadDensity1", "roadDensity2", "trafficStatus",
       "convenience1", "convenience2", "toilet1", "toilet2", "wifi1", "wifi2",
       "gas1", "gas2", "parking1", "parking2", "roadStation1", "roadStation2",
       "hotel", "guesthouse", "station1", "station2", "bus1", "bus2",
@@ -737,7 +886,19 @@ export default function App() {
       }
     } else if (weatherKeys.includes(tileId)) {
       try {
-        const res = await fetchWeatherAndMeteorology(lat, lon);
+        const [res, gsiElev] = await Promise.all([
+          fetchWeatherAndMeteorology(lat, lon),
+          fetchGSIElevation(lat, lon)
+        ]);
+
+        const magicHourVal = calculateMagicHour(res.sunrise?.time || "-", res.sunset?.time || "-");
+        
+        let finalElevation = res.elevation;
+        const gpsAlt = latestGps.current.elevation;
+        if (gpsAlt !== null && res.elevation !== null) {
+          finalElevation = Math.round((gpsAlt + res.elevation) / 2);
+        }
+
         setData((prev) => ({
           ...prev,
           weather: res.weather,
@@ -746,7 +907,9 @@ export default function App() {
           uvIndex: res.uvIndex,
           wind: res.wind,
           humidity: res.humidity,
-          elevation: res.elevation !== null ? res.elevation : prev.elevation,
+          elevation: finalElevation !== null ? finalElevation : prev.elevation,
+          gsiElevation: gsiElev !== null ? gsiElev : (prev.gsiElevation !== null ? prev.gsiElevation : finalElevation),
+          magicHour: magicHourVal,
         }));
         const updatedStamp = Date.now();
         setLastUpdated((prev) => {
@@ -776,7 +939,13 @@ export default function App() {
     } else if (poiKeys.includes(tileId)) {
       try {
         const res = await fetchPOIFromOverpass(lat, lon);
-        setData((prev) => ({ ...prev, ...res }));
+        const speedKmh = latestGps.current.speed !== null ? Math.round(latestGps.current.speed * 3.6) : 0;
+        const traffic = calculateTrafficStatus(lat, lon, speedKmh);
+        setData((prev) => ({
+          ...prev,
+          ...res,
+          trafficStatus: traffic,
+        }));
         const updatedStamp = Date.now();
         setLastUpdated((prev) => {
           const next = { ...prev };
@@ -785,6 +954,30 @@ export default function App() {
         });
       } catch (e) {
         console.error("Single tile update POI error:", e);
+      }
+    } else if (tileId === "earthquake") {
+      try {
+        const res = await fetchEarthquakeInfo();
+        setData((prev) => ({ ...prev, earthquake: res }));
+        setLastUpdated((prev) => ({ ...prev, earthquake: Date.now() }));
+      } catch (e) {
+        console.error("Single tile update Earthquake error:", e);
+      }
+    } else if (tileId === "powerUsage") {
+      try {
+        const res = calculatePowerUsage(lat, lon);
+        setData((prev) => ({ ...prev, powerUsage: res }));
+        setLastUpdated((prev) => ({ ...prev, powerUsage: Date.now() }));
+      } catch (e) {
+        console.error("Single tile update PowerUsage error:", e);
+      }
+    } else if (tileId === "magneticDeclination") {
+      try {
+        const res = calculateMagneticDeclination(lat, lon);
+        setData((prev) => ({ ...prev, magneticDeclination: res }));
+        setLastUpdated((prev) => ({ ...prev, magneticDeclination: Date.now() }));
+      } catch (e) {
+        console.error("Single tile update MagneticDeclination error:", e);
       }
     } else {
       // センサーやローカル計算系は一瞬で現在データから再生成

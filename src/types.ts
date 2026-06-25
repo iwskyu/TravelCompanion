@@ -77,6 +77,13 @@ export interface CompanionData {
   currentTime?: string | null;
   pm25?: number | null;
   waveInfo?: { height: number; period: number; direction: string } | null;
+
+  gsiElevation?: number | null;
+  magicHour?: string | null;
+  earthquake?: string | null;
+  magneticDeclination?: number | null;
+  powerUsage?: { company: string; rate: number; usage: number; capacity: number } | null;
+  trafficStatus?: string | null;
 }
 
 export type TileId = keyof CompanionData | string;

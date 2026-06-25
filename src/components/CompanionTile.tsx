@@ -38,7 +38,7 @@ export function CompanionTile({
   const prevTiltRef = React.useRef<{ pitch: number; roll: number } | null>(null);
   const prevBearingRef = React.useRef<number | null>(null);
 
-  // データの最終更新時刻が変わったら一時的に黄色にする（フラッシュ演出）
+  // データの最終更新時刻が変わったら一時的に黄色にする（フラッシュ演出のフラグ制御）
   useEffect(() => {
     // dbLevel はフラッシュさせない
     if (config.id === "dbLevel") {
@@ -54,9 +54,7 @@ export function CompanionTile({
           const dRoll = Math.abs(roll - prevTiltRef.current.roll);
           if (dPitch >= 30 || dRoll >= 30) {
             setIsFlashing(true);
-            const timer = setTimeout(() => setIsFlashing(false), 750);
             prevTiltRef.current = { pitch, roll };
-            return () => clearTimeout(timer);
           }
         } else {
           prevTiltRef.current = { pitch, roll };
@@ -74,9 +72,7 @@ export function CompanionTile({
           const diff = Math.min(dAngle, 360 - dAngle);
           if (diff >= 30) {
             setIsFlashing(true);
-            const timer = setTimeout(() => setIsFlashing(false), 750);
             prevBearingRef.current = angle;
-            return () => clearTimeout(timer);
           }
         } else {
           prevBearingRef.current = angle;
@@ -85,17 +81,24 @@ export function CompanionTile({
       return;
     }
 
-    const hasChanged = prevValueRef.current !== valueString;
-    prevValueRef.current = valueString;
-
-    if (lastUpdatedTime > 0 && hasChanged) {
-      setIsFlashing(true);
-      const timer = setTimeout(() => {
-        setIsFlashing(false);
-      }, 750); // 0.75秒間黄色（半分の時間）
-      return () => clearTimeout(timer);
+    if (lastUpdatedTime > 0) {
+      const hasChanged = prevValueRef.current !== valueString;
+      prevValueRef.current = valueString;
+      if (hasChanged) {
+        setIsFlashing(true);
+      }
     }
   }, [lastUpdatedTime, valueString, config.id, data.tilt, data.bearing]);
+
+  // isFlashingがtrueになったら、一定時間後に確実にfalseに戻すための、フラッシュ専用のクリーンアップタイマー
+  useEffect(() => {
+    if (isFlashing) {
+      const timer = setTimeout(() => {
+        setIsFlashing(false);
+      }, 750);
+      return () => clearTimeout(timer);
+    }
+  }, [isFlashing]);
 
   // 文字数に応じてフォントサイズを決定。枠内に収まるできるだけ大きいサイズにし、統一感を出す
   // ユーザー要望：全パネルの値、文字をできるだけ大きく、見切れ「…」禁止
@@ -151,10 +154,16 @@ export function CompanionTile({
     }
   };
 
+  const isMovingFast = config.id === "bearing" && data.speed !== null && data.speed !== undefined && (data.speed * 3.6) > 30;
+
   const gradientColors = getGradientColors(config.borderColorClass);
-  const gradientClass = isFlashing
+  let gradientClass = isFlashing
     ? "from-yellow-400 to-amber-500"
     : gradientColors;
+
+  if (isMovingFast) {
+    gradientClass = "from-red-500 to-rose-600 animate-[pulse_1.5s_infinite]";
+  }
 
   return (
     <motion.div
@@ -168,12 +177,21 @@ export function CompanionTile({
     >
       <div
         className={`w-full h-full flex flex-col justify-center px-2 py-1 rounded-[11px] overflow-hidden ${
-          isFlashing ? "bg-yellow-500/10" : "bg-slate-900/85 hover:bg-slate-800/85"
+          isMovingFast
+            ? "bg-red-950/95"
+            : isFlashing
+              ? "bg-yellow-500/10"
+              : "bg-slate-900/85 hover:bg-slate-800/85"
         } transition-all duration-300`}
       >
         {/* 項目名（小さく表示） */}
-        <div className="text-[10px] sm:text-[11px] text-gray-300 font-normal opacity-85 leading-tight mb-0.5 whitespace-normal break-all">
-          {config.emoji} {config.label}
+        <div className="text-[10px] sm:text-[11px] text-gray-300 font-normal opacity-85 leading-tight mb-0.5 whitespace-normal break-all flex items-center justify-between">
+          <span>{config.emoji} {config.label}</span>
+          {isMovingFast && (
+            <span className="text-[9px] font-black text-red-300 bg-red-900/50 px-1 rounded animate-pulse whitespace-nowrap border border-red-500/30">
+              ⚠️移動中
+            </span>
+          )}
         </div>
 
         {/* 値（太字・白文字・大きく表示、見切れ・省略禁止） */}
