@@ -31,6 +31,7 @@ import {
 } from "./utils/geo";
 import { CompanionData, TileId } from "./types";
 import { RefreshCw, MapPin, Mic, Compass, Play, Pause, Maximize2 } from "lucide-react";
+import { motion } from "motion/react";
 
 // デフォルト/初期データ構造
 const INITIAL_COMPANION_DATA: CompanionData = {
@@ -76,6 +77,19 @@ const INITIAL_COMPANION_DATA: CompanionData = {
 
 export default function App() {
   const [started, setStarted] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
   const [data, setData] = useState<CompanionData>(INITIAL_COMPANION_DATA);
   const [deviceHeading, setDeviceHeading] = useState<number | null>(null);
   const [dbLevel, setDbLevel] = useState<number>(0);
@@ -95,6 +109,13 @@ export default function App() {
   
   // カテゴリ選択用 state ("all" = すべて, "weather" = 天候, "driving" = 運転, "climbing" = 登山, "sea" = 海, "disaster" = 防災)
   const [activeCategory, setActiveCategory] = useState<"all" | "weather" | "driving" | "climbing" | "sea" | "disaster">("all");
+
+  // カテゴリタブが切り替わったときにAI情報を即座に優先更新する
+  useEffect(() => {
+    if (started) {
+      triggerGeminiRecommendations(data, activeCategory);
+    }
+  }, [activeCategory, started]);
 
   // タイルごとのキャッシュ判別（フェッチ失敗等で古い/キャッシュであることを示すフラグ）
   const [cachedTiles, setCachedTiles] = useState<Record<TileId, boolean>>({});
@@ -532,16 +553,33 @@ export default function App() {
     }
   }, [isMuted]);
 
+  // 音声案内（自動・手動）の統合クリックハンドラー
+  const handleVoiceToggle = () => {
+    if (!window.speechSynthesis) return;
+
+    if (isMuted) {
+      // 1. ミュート中（オフ）の場合：ミュートを解除し、現在のテキストを即座に読み上げる
+      setIsMuted(false);
+      isMutedRef.current = false;
+      if (recommendations) {
+        // すでに isSpeaking が false なので、一瞬待たずにそのまま再生
+        speakRecommendations(recommendations);
+      }
+    } else if (isSpeaking) {
+      // 2. 読み上げ中の場合：現在の読み上げを即時停止する（ミュート状態はオンのまま）
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+    } else {
+      // 3. 音声オン（待機中）の場合：自動案内機能自体を完全にミュート（オフ）にする
+      setIsMuted(true);
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+    }
+  };
+
   // 音声で読み上げる（上から順番に・トグル停止対応）
   const speakRecommendations = (recs: { alert: string; actionGuide: string; spotInfo: string }) => {
     if (!window.speechSynthesis) return;
-
-    // 既に再生中の場合は、今回のクリックで停止する
-    if (isSpeaking) {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-      return;
-    }
 
     // 新たに再生を開始する
     setIsSpeaking(true);
@@ -594,7 +632,7 @@ export default function App() {
   };
 
   // Gemini推奨情報を取得する
-  const triggerGeminiRecommendations = async (currentData?: CompanionData) => {
+  const triggerGeminiRecommendations = async (currentData?: CompanionData, categoryOverride?: string) => {
     if (!currentCoords.current) {
       console.warn("GPS現在地が未取得のため、デフォルト座標（東京駅）を仮設定してGemini推奨情報を取得します。");
       currentCoords.current = { lat: 35.6812, lon: 139.7671 };
@@ -603,6 +641,7 @@ export default function App() {
     try {
       const { lat, lon } = currentCoords.current;
       const activeData = currentData || data;
+      const cat = categoryOverride || activeCategory;
       const response = await fetch("/api/gemini/recommendations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -610,6 +649,7 @@ export default function App() {
           lat,
           lon,
           data: activeData,
+          category: cat,
         }),
       });
       if (!response.ok) {
@@ -1646,6 +1686,30 @@ export default function App() {
             {data.zipcode ? `〒${data.zipcode} ` : ""}{data.address || "現在地を取得中..."}
           </span>
         </div>
+
+        {/* 滑らかに回転する小さな円形コンパス */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <motion.div
+            animate={{ rotate: deviceHeading !== null ? -deviceHeading : 0 }}
+            transition={{ type: "spring", stiffness: 80, damping: 18 }}
+            className={`w-6 h-6 rounded-full border flex items-center justify-center text-[8px] font-bold relative shrink-0 shadow-inner ${
+              isAddressFlashing 
+                ? "border-slate-800 bg-slate-100 text-slate-800" 
+                : "border-slate-800 bg-slate-950/80 text-sky-400"
+            }`}
+            title={`向いている方角: ${deviceHeading !== null ? Math.round(deviceHeading) : "---"}°`}
+          >
+            <span className="absolute top-0.5 text-[7px] text-rose-500 font-black leading-none">N</span>
+            <div className="w-[1.5px] h-2 bg-rose-500 rounded-full absolute top-1" />
+            <div className="w-[1.5px] h-2 bg-slate-600 rounded-full absolute bottom-1" />
+            <div className="w-1 h-1 rounded-full bg-slate-400 absolute" />
+          </motion.div>
+          {deviceHeading !== null && (
+            <span className={`text-[9px] font-mono font-bold ${isAddressFlashing ? "text-slate-900" : "text-slate-400"}`}>
+              {Math.round(deviceHeading)}°
+            </span>
+          )}
+        </div>
       </div>
 
       {/* メインタイグリッド */}
@@ -1687,7 +1751,7 @@ export default function App() {
         </div>
       </main>
 
-      {/* 🤖 Gemini リアルタイム旅行推奨情報 (画面下部に完全に固定されたフローティング・コンパニオン・ドック) */}
+      {/* 🤖 Gemini リアルタイム旅行情報 (画面下部に完全に固定されたフローティング・コンパニオン・ドック) */}
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-950/95 backdrop-blur-md border-t border-white/15 px-4 pt-3 pb-2 shadow-[0_-12px_40px_rgba(0,0,0,0.7)]">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center justify-between mb-2">
@@ -1699,32 +1763,50 @@ export default function App() {
                 <span className={`relative inline-flex rounded-full h-2 w-2 ${isLoadingRecommendations ? "bg-sky-500" : "bg-emerald-500"}`}></span>
               </span>
               <span className="text-[11px] font-bold text-slate-200 tracking-wide font-sans flex items-center gap-1 select-none">
-                🤖 AI リアルタイム推奨情報 (5分更新)
+                🤖 AI リアルタイム情報 (5分更新)
                 {isLoadingRecommendations && <span className="text-[10px] text-slate-400 animate-pulse font-normal">(更新中...)</span>}
               </span>
             </div>
             <div className="flex items-center gap-1.5">
               <button
-                onClick={() => recommendations && speakRecommendations(recommendations)}
+                onClick={handleVoiceToggle}
                 disabled={!recommendations || isLoadingRecommendations}
-                className={`flex items-center gap-1 px-2.5 py-1 text-[10px] disabled:opacity-40 disabled:cursor-not-allowed transition-all font-bold rounded border shadow-sm cursor-pointer select-none ${
-                  isSpeaking 
-                    ? "bg-amber-950/40 hover:bg-amber-900/40 border-amber-500/20 text-amber-300 animate-pulse" 
-                    : "bg-slate-800 hover:bg-slate-700 border-white/5 text-slate-200"
-                }`}
-                title={isSpeaking ? "読み上げを停止" : "音声を再生"}
-              >
-                {isSpeaking ? "⏹ 停止する" : "📢 読み上げ"}
-              </button>
-              <button
-                onClick={() => setIsMuted(!isMuted)}
-                className={`flex items-center gap-1 px-2.5 py-1 text-[10px] transition-all font-bold rounded border shadow-sm cursor-pointer select-none ${
-                  isMuted 
-                    ? "bg-rose-950/40 hover:bg-rose-900/40 border-rose-500/20 text-rose-300" 
+                className={`flex items-center gap-1.5 px-3 py-1 text-[10px] disabled:opacity-40 disabled:cursor-not-allowed transition-all font-bold rounded border shadow-sm cursor-pointer select-none ${
+                  isSpeaking
+                    ? "bg-amber-950/40 hover:bg-amber-900/40 border-amber-500/20 text-amber-300 animate-pulse"
+                    : isMuted
+                    ? "bg-rose-950/40 hover:bg-rose-900/40 border-rose-500/20 text-rose-300"
                     : "bg-emerald-950/40 hover:bg-emerald-900/40 border-emerald-500/20 text-emerald-300"
                 }`}
+                title={
+                  isSpeaking 
+                    ? "読み上げを即時停止" 
+                    : isMuted 
+                    ? "音声案内をオンにする (即時読み上げ)" 
+                    : "音声案内をオフにする (ミュート)"
+                }
               >
-                {isMuted ? "🔇 ミュート中" : "🔊 自動再生オン"}
+                {isSpeaking ? (
+                  <>
+                    <span className="relative flex h-1.5 w-1.5 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
+                    </span>
+                    <span>⏹ 停止する</span>
+                  </>
+                ) : isMuted ? (
+                  <>
+                    <span>🔇 音声案内: オフ</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="relative flex h-1.5 w-1.5 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                    </span>
+                    <span>🔊 音声案内: オン (自動)</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -1736,8 +1818,14 @@ export default function App() {
           </div>
 
           {/* フッターを固定ドックの下にスリムに統合して省スペース化 */}
-          <div className="mt-2 text-center text-[9px] text-slate-500 select-none border-t border-white/5 pt-1.5">
-            旅のお供 ver81 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
+          <div className="mt-2 text-center text-[9px] text-slate-500 select-none border-t border-white/5 pt-1.5 flex flex-wrap items-center justify-between gap-2 px-1">
+            <span>旅のお供 ver81 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン</span>
+            {(!isOnline || !currentCoords.current) && (
+              <span className="flex items-center gap-1 text-rose-400 font-bold animate-pulse">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_#f43f5e]"></span>
+                <span>オフラインモードで動作中</span>
+              </span>
+            )}
           </div>
         </div>
       </div>

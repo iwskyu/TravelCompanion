@@ -36,86 +36,129 @@ function getAiClient(): GoogleGenAI {
   return aiClient;
 }
 
-/// API Route for Gemini Travel Recommendations
+//// API Route for Gemini Travel Recommendations
 app.post("/api/gemini/recommendations", async (req, res) => {
   try {
-    const { lat, lon, data } = req.body;
+    const { lat, lon, data, category } = req.body;
+
+    // APIキーの存在チェック。未設定の場合はダミーデータではなく、ユーザーへの分かりやすい設定指示を返す
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey.trim() === "") {
+      return res.json({
+        alert: "⚠️ 【設定エラー】画面右上の「Settings > Secrets」から「GEMINI_API_KEY」を設定してください！",
+        actionGuide: "AI情報機能を使用するには、Gemini APIキーの追加登録が必要です。",
+        spotInfo: "登録完了後、あなたの現在地に連動した「どのお店で何がいくらで買えるか」といった超限定情報が動き出します。"
+      });
+    }
+
     const ai = getAiClient();
 
-    // Construct a rich, structured prompt with the real-time user status
+    // カテゴリに応じた優先テーマ指示を動的に生成
+    let categoryPriorityInstruction = "";
+    if (category) {
+      switch (category) {
+        case "driving":
+          categoryPriorityInstruction = "【最優先テーマ：運転・ドライブ】現在地付近から車で行きやすい「道の駅」「駐車場」「ローカルガソリンスタンド」「道路渋滞・抜け道状況」「おすすめドライブインやおやつ店（店名・価格・営業時間）」に特化した情報。";
+          break;
+        case "climbing":
+          categoryPriorityInstruction = "【最優先テーマ：登山・山登り】現在地周辺の「登山道」「トレッキングコース」「山小屋」「避難小屋」「標高変化に伴う防寒・安全対策」「登山者向け名物行動食」に特化した情報。";
+          break;
+        case "sea":
+          categoryPriorityInstruction = "【最優先テーマ：海・ビーチ】周辺の「ビーチ」「漁港」「具体的な釣りのポイント」「潮汐や波の注意点」「獲れたて魚介を提供する食堂（店名・名物・価格・営業時間）」に特化した情報。";
+          break;
+        case "weather":
+          categoryPriorityInstruction = "【最優先テーマ：天候・気象】現在の天気、降水、風、紫外線、マジックアワーを活かしたアドバイス。雨なら駆け込める屋内施設、晴れなら絶景夕日・星空スポットの店や場所。";
+          break;
+        case "disaster":
+          categoryPriorityInstruction = "【最優先テーマ：防災・安全】現在地から最寄りの具体的な「指定避難所」「ハザード（河川氾濫、土砂災害等）の危険度」「最寄りの非常用電源・コンビニ」など安全確保を最優先にした命を守る情報。";
+          break;
+        default:
+          categoryPriorityInstruction = "【最優先テーマ：全般】現在地周辺の実在する面白いスポット、ローカル名物（店名、おやつの価格、営業時間）を具体的かつ簡潔に。";
+          break;
+      }
+    }
+
     const prompt = `
-ユーザーは現在旅行中、または移動中です。以下のリアルタイムな周辺環境データおよび位置情報を分析し、単調でつまらないアドバイスは絶対に避け、旅の冒険心をくすぐり、思わず「うわ、行ってみたい！」「これやってみたい！」とユーザーが身を乗り出すような、驚くほど具体的で超ローカルな面白情報を生成してください。
+以下の周辺環境データと【最優先テーマ】に基づき、旅行者のための超ローカル情報を日本語かつ極限まで簡潔に生成してください。
 
-【現在のユーザーの環境データ】
+【最優先テーマ】
+${categoryPriorityInstruction}
+
+【現在の環境データ】
 現在地: ${data?.address || "取得中..."} (〒${data?.zipcode || "不明"})
-緯度・経度: ${lat || "不明"}, ${lon || "不明"}
-現在日時: ${data?.currentDate || ""} ${data?.currentTime || ""}
-天気: ${data?.weather ? `${data.weather.temp}℃ (コード: ${data.weather.code})` : "不明"}
-降水確率・量: ${data?.precipitation ? `確率 ${data.precipitation.probability}% / 量 ${data.precipitation.amount}mm` : "不明"}
-雨雲接近: ${data?.rainCloudApproach || "不明"}
-風速・風向き: ${data?.wind ? `${data.wind.direction} ${data.wind.speed}m/s` : "不明"}
-大気 (花粉/PM2.5/黄砂): PM2.5: ${data?.pm25 || "不明"}
-日の出・日没 / 夕方カウントダウン: ${data?.sunrise ? `日の出: ${data.sunrise.time}` : ""} / ${data?.sunset ? `日没: ${data.sunset.time}` : ""} / ${data?.sunsetCountdown || ""}
-月齢: ${data?.moonAge ? `${data.moonAge.state} (月齢: ${data.moonAge.age})` : "不明"}
-潮汐・波情報: 満潮/干潮: ${data?.highTide || ""}/${data?.lowTide || ""} / 波: ${data?.waveInfo ? `${data.waveInfo.height}m` : ""}
-周囲の騒音: ${data?.dbLevel ? `${data.dbLevel} dB` : "不明"}
-移動速度: ${data?.speed ? `${data.speed} m/s` : "0"}
-防災・インフラ情報: 地震: ${data?.earthquake || "正常"} / 電力: ${data?.powerUsage ? `${data.powerUsage.company} 使用率 ${data.powerUsage.rate}%` : ""} / 道路交通: ${data?.trafficStatus || "順調"}
+緯度経度: ${lat || "不明"}, ${lon || "不明"}
+日時: ${data?.currentDate || ""} ${data?.currentTime || ""}
+天気・雨雲: ${data?.weather ? `${data.weather.temp}℃` : "不明"} / ${data?.rainCloudApproach || "正常"}
+風・湿度・大気: 風 ${data?.wind?.speed || "0"}m/s / PM2.5 ${data?.pm25 || "正常"}
+日の出・日没・マジックアワー: ${data?.sunrise ? `出 ${data.sunrise.time}` : ""} / ${data?.sunset ? `没 ${data.sunset.time}` : ""} / マジックアワー ${data?.magicHour || ""}
+潮汐・波: 満/干: ${data?.highTide || ""}/${data?.lowTide || ""} / 波: ${data?.waveInfo ? `${data.waveInfo.height}m` : ""}
+騒音・防災・交通: 騒音 ${data?.dbLevel || "0"}dB / 地震: ${data?.earthquake || "正常"} / 電力: ${data?.powerUsage?.rate || "0"}% / 道路: ${data?.trafficStatus || "順調"}
 
-【極めて重要な指示（最強のローカリティ）】
-1. 現在地（${data?.address || "不明"}）から、付近（半径200m〜3km以内）の実在する（またはその地域に確実に存在する）ランドマーク、交差点、人気店、名物メニュー、B級グルメ、珍スポット、最新トレンドを特定・推論してください。
-2. 危険情報（alert）:
-   天候や環境からスマートに身を守る、ウィットに富んだ警告。
-   例: 「⚠ 少し風が強め。ここから徒歩3分のところにあるレトロな喫茶店『珈琲の森』に駆け込み、名物の厚切りトースト（450円・20時まで営業）でまったり雨風を避けるのが賢い選択！」
-3. 次の行動（actionGuide）:
-   現在の時間や天気、地域のトレンドを活かした、その瞬間を10倍楽しむためのエモい行動。
-   例: 「🚶‍♂️この時間、徒歩2分にある渋谷スクランブル交差点は外国人で超賑やか！歩行者横断中にスローモーション動画を撮ってTikTokに投稿するのが今大流行中。混ざってみる？」
-   例: 「🌇今まさに奇跡的なマジックアワー！ここから車で4分の高台にある『見晴らし展望台』へ。1分だけ車を停めて、黄金色の街並みを目に焼き付けよう！」
-4. お役立ち（spotInfo）:
-   超ローカル情報を極めて具体的に提示すること。「どのお店の、何という商品が、何円で最高」「何時まで営業している」といった、お腹が空いたり行きたくなったりする超リアルな情報を必ず含めてください。
-   例: 「📍ここから1.5km先の『峠の茶屋』（18時まで営業）で売っている、炭火で焼いたモチモチの『くるみ味噌団子（2本320円）』は、ドライブ中のエネルギー補給に最強！」
-   例: 「📍すぐ近くの個人商店『ハチ公ショップ』（21時まで）で限定販売されている『シブヤ生キャラメル（380円）』は、濃厚で隠れた渋谷のおすすめ品！」
-
-【出力制限】
-各項目は流れる文字（マーキー）で表示されるため、必ず「1文で簡潔に（50〜80文字程度）」まとめてください。長すぎる文は禁物です。
+【出力条件（爆速化のため絶対に厳守）】
+- 各項目は、日本語で「完全に1文のみ」、かつ「45〜65文字以内」にまとめてください。
+- 余計な枕詞、挨拶、まとめ文は一切含めないでください。
+- 実在する具体的な店舗名や、おやつの具体的な金額（例：○○カフェのクッキー250円）を1つ必ず含めてください。
 `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-      config: {
-        systemInstruction: "あなたは旅行者、ドライバー、または登山者を心からワクワクさせる『最強の旅のお供AIコンパニオン』です。提供されたリアルタイムの位置情報と自然環境データを分析し、通り一遍の案内は1ミリもせず、現地に住んでいる人しか知らないような『超ローカルで生々しく具体的な情報』を全力で語りかけてください。特に『どのお店の、何という商品が、いくらで絶品で、何時まで営業しているか』『近くの面白スポットで今どんなトレンド（SNS、写真撮影など）が流行っているか』を極めて具体的に、1項目につき1文（50〜80文字以内）で提示してください。実在する特定の店やスポット、ローカルチェーンを積極的に推測・描写して楽しませてください。",
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            alert: {
-              type: Type.STRING,
-              description: "危険情報などのアラート。具体的な店舗での退避、ローカルおやつの価格や営業時間を交える。1文で簡潔に。",
-            },
-            actionGuide: {
-              type: Type.STRING,
-              description: "今すぐ取るべきエモい行動・SNSや現地でのトレンド体験。1文で簡潔に。",
-            },
-            spotInfo: {
-              type: Type.STRING,
-              description: "超具体的なローカルお役立ち。どのお店のどの商品が何円で、何時まで営業しているか。1文で簡潔に。",
+    // 爆速モデル gemini-2.5-flash を最優先で使用し、さらに速度向上のため温度とトークン数を最適化
+    const modelsToTry = ["gemini-2.5-flash", "gemini-3.5-flash"];
+    let response = null;
+    let lastError = null;
+
+    for (const modelName of modelsToTry) {
+      try {
+        response = await ai.models.generateContent({
+          model: modelName,
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          config: {
+            systemInstruction: "あなたは爆速でお供情報を返すAIです。余計な説明や挨拶は完全に排除し、指定されたスキーマに従って日本語の1文（45〜65文字）で回答してください。実在する特定の店舗名、商品名、および価格（例：○○カフェのクッキー250円）を必ず1つ含めてください。",
+            responseMimeType: "application/json",
+            temperature: 0.1, // 決定論的な出力を高めて思考速度を極限まで引き上げる
+            maxOutputTokens: 250, // 通信とトークン生成コストを抑えレスポンスを最速化
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                alert: {
+                  type: Type.STRING,
+                  description: "現在の気象や環境、カテゴリに即した注意。1文で45〜65文字以内。",
+                },
+                actionGuide: {
+                  type: Type.STRING,
+                  description: "今取るべき行動やアドバイス。1文で45〜65文字以内。",
+                },
+                spotInfo: {
+                  type: Type.STRING,
+                  description: "具体的なローカル店舗、商品、価格、営業時間。1文で45〜65文字以内。",
+                },
+              },
+              required: ["alert", "actionGuide", "spotInfo"],
             },
           },
-          required: ["alert", "actionGuide", "spotInfo"],
-        },
-      },
-    });
+        });
+        if (response) {
+          console.log(`Successfully generated recommendations with model: ${modelName}`);
+          break;
+        }
+      } catch (err) {
+        console.warn(`Attempt with ${modelName} failed, trying next:`, err);
+        lastError = err;
+      }
+    }
+
+    if (!response) {
+      throw lastError || new Error("All fallback models failed.");
+    }
 
     const text = response.text || "{}";
     const result = JSON.parse(text);
     res.json(result);
   } catch (error: any) {
     console.error("Gemini Recommendations Error:", error);
+    const errorDetails = error?.message || "不明なAPIエラー";
     res.json({
-      alert: "⚠️ 雨雲の動きに注意！すぐそこにある個人経営の喫茶店に飛び込んで、名物のプリン（350円・21時まで）で雨宿りが一番スマートです！",
-      actionGuide: "📸 徒歩2分の渋谷スクランブル交差点は、外国人観光客が横断中に動画を撮ってTikTokに上げるのが大流行中！混ざって面白い1枚を狙ってみる？",
-      spotInfo: "📍 この先1.5kmにある『峠の茶屋』（18時まで営業）の『焼きくるみ団子（2本320円）』は、焼きたてアツアツでもっちもち。ドライブのお供に最高です！",
+      alert: `⚠️ 【AI取得エラー】${errorDetails.slice(0, 50)}...。電波状況かAPIキーのクォータ制限を確認してください。`,
+      actionGuide: "現在地データを元にした推奨情報の取得に失敗しました。時間をおいて一括更新をお試しください。",
+      spotInfo: "💡 解決策: Settings > Secrets で設定した Gemini APIキー が正しく有効であることを確認してください。"
     });
   }
 });
