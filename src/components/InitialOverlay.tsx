@@ -54,9 +54,8 @@ export function InitialOverlay({ onStart }: InitialOverlayProps) {
         lon: position.coords.longitude,
       };
     } catch (err) {
-      console.warn("Geolocation denied or timed out, loading default/approximate position", err);
-      // 福岡などの都市をデフォルトにするのではなく、東京あたりをデフォルトにしつつ、後から高精度で取得を試みる
-      coords = { lat: 35.6895, lon: 139.6917 }; // 東京都庁
+      console.warn("Geolocation denied or timed out", err);
+      coords = null;
     }
 
     // 即座にオーバーレイを消してメイン画面に遷移
@@ -77,7 +76,7 @@ export function InitialOverlay({ onStart }: InitialOverlayProps) {
             transition={{ duration: 0.6 }}
             className="w-20 h-20 bg-gradient-to-tr from-slate-900 to-slate-950 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/10 mx-auto border border-slate-800"
           >
-            <img src="/icon.svg" className="w-16 h-16 animate-[spin_30s_linear_infinite]" alt="旅のお供" referrerPolicy="no-referrer" />
+            <Compass className="w-12 h-12 text-sky-400 animate-[spin_30s_linear_infinite]" />
           </motion.div>
           
           <motion.h1

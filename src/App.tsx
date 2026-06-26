@@ -75,106 +75,265 @@ const INITIAL_COMPANION_DATA: CompanionData = {
   accumulatedDistance: 0,
 };
 
-// --- 今日の旅コンディションの計算ロジック ---
+// --- 今日の旅コンディションの計算ロジック (カテゴリ別) ---
 interface TravelCondition {
+  title: string;
+  icon: string;
   score: number;
   stars: number;
   remarks: string[];
 }
 
-function getTravelCondition(data: CompanionData): TravelCondition {
+function getCategoryCondition(data: CompanionData, category: string): TravelCondition {
   let score = 70; // ベースライン
   const remarks: string[] = [];
+  let title = "今日の旅コンディション";
+  let icon = "✨";
 
-  // 天気コードに基づく判定
-  if (data.weather) {
-    const code = data.weather.code;
-    if (code === 0) {
-      score += 15;
-      remarks.push("晴天で絶好の行楽日和");
-    } else if (code === 1 || code === 2 || code === 3) {
-      score += 8;
-      remarks.push("穏やかな晴れ間");
-    } else if (code >= 51 && code <= 65) {
-      score -= 25;
-      remarks.push("雨が降っています");
-    } else if (code >= 95) {
-      score -= 35;
-      remarks.push("荒天・雷雨に厳重注意");
-    } else {
-      remarks.push("曇りがちなお天気");
-    }
+  switch (category) {
+    case "all":
+      title = "今日の旅コンディション";
+      icon = "✨";
+      if (data.weather) {
+        const code = data.weather.code;
+        if (code === 0) {
+          score += 15;
+          remarks.push("晴天で絶好の行楽日和");
+        } else if (code === 1 || code === 2 || code === 3) {
+          score += 8;
+          remarks.push("穏やかな晴れ間");
+        } else if (code >= 51 && code <= 65) {
+          score -= 25;
+          remarks.push("雨が降っています");
+        } else if (code >= 95) {
+          score -= 35;
+          remarks.push("荒天・雷雨に厳重注意");
+        } else {
+          remarks.push("曇りがちなお天気");
+        }
 
-    // 気温の快適さ
-    const temp = data.weather.temp;
-    if (temp >= 15 && temp <= 25) {
-      score += 10;
-      remarks.push("車中泊・散策に快適な気温");
-    } else if (temp < 10) {
-      score -= 10;
-      remarks.push("肌寒いため防寒対策を");
-    } else if (temp > 30) {
-      score -= 15;
-      remarks.push("熱中症に警戒してください");
-    }
-  } else {
-    remarks.push("お天気データ準備中");
+        const temp = data.weather.temp;
+        if (temp >= 15 && temp <= 25) {
+          score += 10;
+          remarks.push("車中泊・散策に快適な気温");
+        } else if (temp < 10) {
+          score -= 10;
+          remarks.push("肌寒いため防寒対策を");
+        } else if (temp > 30) {
+          score -= 15;
+          remarks.push("熱中症に警戒してください");
+        }
+      } else {
+        remarks.push("お天気データ準備中");
+      }
+
+      if (data.rainCloudApproach) {
+        if (data.rainCloudApproach.includes("分後")) {
+          score -= 20;
+          remarks.push(`雨雲が接近中（${data.rainCloudApproach}）`);
+        } else if (data.rainCloudApproach.includes("心配なし") || data.rainCloudApproach.includes("正常") || data.rainCloudApproach.includes("なし")) {
+          score += 5;
+          remarks.push("直近の雨の心配はありません");
+        }
+      }
+
+      if (data.wind) {
+        const wSpeed = data.wind.speed;
+        if (wSpeed < 3.0) {
+          score += 5;
+          remarks.push("風が弱く非常に穏やか");
+        } else if (wSpeed > 7.0) {
+          score -= 10;
+          remarks.push("風が強く吹き荒れています");
+        }
+      }
+
+      if (data.weather && data.humidity !== null) {
+        const code = data.weather.code;
+        const hum = data.humidity;
+        if ((code === 0 || code === 1) && hum < 65) {
+          score += 5;
+          remarks.push("富士山が見えやすい視程です");
+        }
+      }
+
+      if (data.weather && data.sunset && data.sunset.time !== "-") {
+        const code = data.weather.code;
+        if (code === 0 || code === 1 || code === 2) {
+          score += 5;
+          remarks.push("夕焼けが期待できる空模様");
+        }
+      }
+      break;
+
+    case "weather":
+      title = "お出かけコンディション";
+      icon = "🌈";
+      if (data.weather) {
+        const code = data.weather.code;
+        if (code === 0 || code === 1) {
+          score += 20;
+          remarks.push("青空が広がるお出かけ日和");
+        } else if (code === 2 || code === 3) {
+          score += 10;
+          remarks.push("お出かけに問題ない空模様");
+        } else {
+          score -= 20;
+          remarks.push("傘や雨具が必要です");
+        }
+      } else {
+        remarks.push("お天気データ準備中");
+      }
+      if (data.uvIndex) {
+        const uv = data.uvIndex.index;
+        if (uv >= 6) {
+          score -= 5;
+          remarks.push("日焼け止め・日傘が必須です");
+        } else if (uv <= 2) {
+          remarks.push("紫外線は弱めです");
+        }
+      }
+      if (data.humidity && data.humidity > 75) {
+        score -= 5;
+        remarks.push("湿度が高く少し蒸し暑いです");
+      }
+      break;
+
+    case "driving":
+      title = "ドライブ＆ツーリングコンディション";
+      icon = "🚗";
+      if (data.trafficStatus) {
+        if (data.trafficStatus.includes("順調")) {
+          score += 15;
+          remarks.push("道路状況はスムーズで順調");
+        } else if (data.trafficStatus.includes("渋滞")) {
+          score -= 25;
+          remarks.push("周辺道路で渋滞が発生中");
+        } else {
+          score -= 10;
+          remarks.push("道路が少し混雑しています");
+        }
+      } else {
+        remarks.push("道路交通状況の取得中");
+      }
+      if (data.weather) {
+        const code = data.weather.code;
+        if (code >= 51) {
+          score -= 15;
+          remarks.push("雨で路面が滑りやすいため減速");
+        }
+      }
+      if (data.wind && data.wind.speed > 8.0) {
+        score -= 10;
+        remarks.push("横風が強いためハンドル操作注意");
+      }
+      break;
+
+    case "climbing":
+      title = "山登りコンディション";
+      icon = "🏔️";
+      if (data.weather) {
+        const code = data.weather.code;
+        if (code === 0) {
+          score += 20;
+          remarks.push("視界良好で絶好の登山日和");
+        } else if (code >= 51) {
+          score -= 35;
+          remarks.push("雨のため登山はおすすめしません");
+        } else if (code >= 45 && code <= 48) {
+          score -= 20;
+          remarks.push("濃霧のため道迷いに注意");
+        }
+      } else {
+        remarks.push("山岳お天気データ準備中");
+      }
+      if (data.wind) {
+        const wSpeed = data.wind.speed;
+        if (wSpeed > 6.0) {
+          score -= 20;
+          remarks.push("稜線は強風の可能性・低体温注意");
+        } else {
+          score += 5;
+          remarks.push("風が穏やかで登りやすい");
+        }
+      }
+      if (data.elevation && data.elevation > 1000) {
+        remarks.push(`標高 ${Math.round(data.elevation)}m：平地より気温低め`);
+      }
+      break;
+
+    case "sea":
+      title = "海コンディション";
+      icon = "🌊";
+      if (data.waveInfo) {
+        const h = data.waveInfo.height;
+        if (h < 0.8) {
+          score += 20;
+          remarks.push("波が穏やかで海水浴・釣り日和");
+        } else if (h > 1.8) {
+          score -= 35;
+          remarks.push("波が高く、磯や砂浜は危険です");
+        } else {
+          score -= 10;
+          remarks.push("波がやや高めです");
+        }
+      } else {
+        remarks.push("波情報の分析中");
+      }
+      if (data.seaTemp) {
+        if (data.seaTemp >= 23) {
+          score += 10;
+          remarks.push(`海水温 ${data.seaTemp}℃：快適に泳げます`);
+        } else if (data.seaTemp < 18) {
+          score -= 15;
+          remarks.push(`海水温 ${data.seaTemp}℃：ウェットスーツ推奨`);
+        }
+      }
+      if (data.highTide || data.lowTide) {
+        remarks.push(`潮汐：満潮 / 干潮データ確認推奨`);
+      }
+      break;
+
+    case "disaster":
+      title = "防災安全コンディション";
+      icon = "🚨";
+      if (data.earthquake) {
+        if (data.earthquake.includes("情報なし") || data.earthquake.includes("正常") || data.earthquake.includes("安定")) {
+          score = 100;
+          remarks.push("地震活動は安定しています");
+        } else {
+          score = 40;
+          remarks.push("直近で有感地震が観測されました");
+        }
+      } else {
+        remarks.push("地震情報の監視中");
+      }
+      if (data.powerUsage) {
+        const rate = data.powerUsage.rate;
+        if (rate > 90) {
+          score -= 10;
+          remarks.push("地域の電力需給が逼迫ぎみです");
+        }
+      }
+      break;
+
+    default:
+      title = "旅コンディション";
+      icon = "✨";
+      remarks.push("快適に旅をお楽しみください");
+      break;
   }
 
-  // 雨雲接近
-  if (data.rainCloudApproach) {
-    if (data.rainCloudApproach.includes("分後")) {
-      score -= 20;
-      remarks.push(`雨雲が接近中（${data.rainCloudApproach}）`);
-    } else if (data.rainCloudApproach.includes("心配なし") || data.rainCloudApproach.includes("正常") || data.rainCloudApproach.includes("なし")) {
-      score += 5;
-      remarks.push("直近の雨の心配はありません");
-    }
-  }
-
-  // 風速
-  if (data.wind) {
-    const wSpeed = data.wind.speed;
-    if (wSpeed < 3.0) {
-      score += 5;
-      remarks.push("風が弱く非常に穏やか");
-    } else if (wSpeed > 7.0) {
-      score -= 10;
-      remarks.push("風が強く吹き荒れています");
-    }
-  }
-
-  // 富士山の見えやすさ
-  if (data.weather && data.humidity !== null) {
-    const code = data.weather.code;
-    const hum = data.humidity;
-    if ((code === 0 || code === 1) && hum < 65) {
-      score += 5;
-      remarks.push("富士山が見えやすい視程です");
-    }
-  }
-
-  // 夕焼け期待度
-  if (data.weather && data.sunset && data.sunset.time !== "-") {
-    const code = data.weather.code;
-    if (code === 0 || code === 1 || code === 2) {
-      score += 5;
-      remarks.push("夕焼けが期待できる空模様");
-    }
-  }
-
-  // スコア範囲を10点〜100点に制限
   score = Math.max(10, Math.min(100, score));
-  // 星の数 (1〜5)
   const stars = Math.max(1, Math.min(5, Math.round(score / 20)));
 
   if (remarks.length === 0) {
-    remarks.push("標準的な旅行コンディション");
+    remarks.push("標準的なコンディションです");
   }
 
   const uniqueRemarks = Array.from(new Set(remarks)).slice(0, 4);
 
-  return { score, stars, remarks: uniqueRemarks };
+  return { title, icon, score, stars, remarks: uniqueRemarks };
 }
 
 // --- オフライン時の避難場所リストフォールバック ---
@@ -240,6 +399,7 @@ export default function App() {
   const [deviceHeading, setDeviceHeading] = useState<number | null>(null);
   const [dbLevel, setDbLevel] = useState<number>(0);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isConditionCollapsed, setIsConditionCollapsed] = useState<boolean>(false);
   const isPausedRef = useRef<boolean>(false);
   const lastGeminiTimeRef = useRef<number>(0);
   const categoryDebounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -1001,8 +1161,21 @@ export default function App() {
     }
 
     if (!currentCoords.current) {
-      console.warn("GPS現在地の取得に失敗したため、デフォルト座標（東京駅）を仮に使用して情報を表示・更新します。");
-      currentCoords.current = { lat: 35.6812, lon: 139.7671 };
+      console.warn("GPS現在地が取得できません。位置情報の許可、または電波状況を確認してください。");
+      setData((prev) => ({
+        ...prev,
+        address: "GPS信号を受信できません。位置情報の利用を許可し、一括更新してください。",
+        zipcode: null,
+      }));
+      setIsUpdating(false);
+      
+      // GPS未取得の時の親切な案内をGeminiおすすめ欄に直接セット
+      setRecommendations({
+        alert: "🧭 【GPSシグナルなし】現在地の取得を待っています...",
+        actionGuide: "スマートフォンのGPS（位置情報）が有効になっているか確認してください。",
+        spotInfo: "GPSが取得されると、あなたの居場所に完全に連動したAIコンパニオンが起動します。"
+      });
+      return;
     }
 
     const { lat, lon } = currentCoords.current;
@@ -2006,7 +2179,7 @@ export default function App() {
         {/* ロゴと現在地の概要 */}
         <div className="flex items-center gap-2.5">
           <div className="w-6.5 h-6.5 bg-gradient-to-tr from-slate-900 to-slate-950 rounded-md flex items-center justify-center shadow-md border border-slate-800">
-            <img src="/icon.svg" className="w-5 h-5 text-white animate-[spin_25s_linear_infinite]" alt="旅のお供" referrerPolicy="no-referrer" />
+            <Compass className="w-4 h-4 text-sky-400 animate-[spin_25s_linear_infinite]" />
           </div>
           <div className="flex items-center gap-2">
             <h1 className="text-base sm:text-lg font-black text-white tracking-wider flex items-center gap-1 whitespace-nowrap">
@@ -2122,38 +2295,15 @@ export default function App() {
         </div>
       )}
 
-      {/* 住所表示パネル (コンパスと方位数値を内包) */}
+      {/* 住所表示パネル (コンパス非表示、住所のみをシンプルに表示) */}
       <div
         ref={mainRef}
-        className={`sticky top-0 z-30 w-full px-4 py-2 flex items-center justify-between gap-1.5 text-xs border-b backdrop-blur-md transition-colors duration-300 ${addressBgClass}`}
+        className={`sticky top-0 z-30 w-full px-4 py-2 flex items-center justify-start gap-1.5 text-xs border-b backdrop-blur-md transition-colors duration-300 ${addressBgClass}`}
       >
-        <div className="flex items-center gap-1.5 min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span className={isAddressFlashing ? "text-slate-950" : "text-sky-400"}>📍</span>
           <span className={`truncate font-bold tracking-wide text-sm ${isAddressFlashing ? "text-slate-950" : "text-slate-200"}`}>
             {data.zipcode ? `〒${data.zipcode} ` : ""}{data.address || "現在地を取得中..."}
-          </span>
-        </div>
-
-        {/* 住所欄内のコンパス＆方角数値表示 */}
-        <div className="flex items-center gap-2 shrink-0 select-none bg-slate-950/40 border border-white/5 rounded-lg px-2.5 py-1 text-slate-300">
-          <div className="relative w-3 h-3 flex items-center justify-center">
-            <div 
-              style={{ transform: `rotate(${deviceHeading !== null ? -deviceHeading : 0}deg)` }}
-              className="text-[10px] leading-none transition-transform duration-100 ease-out flex items-center justify-center font-black text-rose-500"
-            >
-              ▲
-            </div>
-          </div>
-          <span className="font-mono text-[11px] font-bold">
-            {deviceHeading !== null ? `${Math.round(deviceHeading)}°` : "---°"}
-            <span className="text-[10px] text-sky-400 font-sans ml-1">
-              {(() => {
-                if (deviceHeading === null) return "---";
-                const val = Math.floor((deviceHeading / 22.5) + 0.5);
-                const arr = ["北", "北北東", "北東", "東北東", "東", "東南東", "南東", "南南東", "南", "南南西", "南西", "西南西", "西", "西北西", "北西", "北北西"];
-                return arr[val % 16];
-              })()}
-            </span>
           </span>
         </div>
       </div>
@@ -2198,14 +2348,57 @@ export default function App() {
         </div>
       )}
 
-      {/* 今日の旅コンディション */}
+      {/* 今日の旅コンディション (カテゴリ別のコンディション、カスタム時は非表示、タップで折りたたみ可能) */}
       {(() => {
-        const cond = getTravelCondition(data);
+        if (activeCategory === "custom") return null;
+        const cond = getCategoryCondition(data, activeCategory);
+        
+        if (isConditionCollapsed) {
+          return (
+            <div 
+              onClick={() => setIsConditionCollapsed(false)}
+              className="mx-4 my-1.5 px-4 py-2.5 bg-slate-900/80 hover:bg-slate-900 border border-white/10 rounded-xl shadow-md flex items-center justify-between gap-3 shrink-0 cursor-pointer select-none transition-all active:scale-[0.99]"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-base shrink-0 leading-none">{cond.icon}</span>
+                <span className="text-xs font-black text-slate-200 truncate">{cond.title}</span>
+                <div className="flex items-center gap-1 shrink-0 ml-1">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <span
+                      key={i}
+                      className={`text-[10px] leading-none ${
+                        i < cond.stars ? "text-yellow-400" : "text-slate-700"
+                      }`}
+                    >
+                      ★
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-sm font-black font-mono text-emerald-400">
+                  {cond.score}点
+                </span>
+                <span className="text-[9px] text-slate-500 font-bold bg-slate-950/40 px-1.5 py-0.5 rounded">
+                  詳細 ＋
+                </span>
+              </div>
+            </div>
+          );
+        }
+
         return (
-          <div className="mx-4 my-2 p-4 bg-slate-900/70 border border-white/10 rounded-2xl shadow-xl flex items-center justify-between gap-4 shrink-0">
+          <div 
+            onClick={() => setIsConditionCollapsed(true)}
+            className="mx-4 my-2 p-4 bg-slate-900/70 border border-white/10 rounded-2xl shadow-xl flex items-center justify-between gap-4 shrink-0 cursor-pointer select-none hover:bg-slate-900/80 transition-all active:scale-[0.99]"
+            title="タップするとコンパクトに畳みます"
+          >
             <div className="flex-grow">
-              <div className="text-xs text-sky-400 font-extrabold tracking-wider mb-1 select-none flex items-center gap-1.5">
-                <span>✨</span> 今日の旅コンディション
+              <div className="text-xs text-sky-400 font-extrabold tracking-wider mb-1 flex items-center gap-1.5">
+                <span>{cond.icon}</span> {cond.title}
+                <span className="text-[9px] text-slate-500 font-normal normal-case ml-auto shrink-0 select-none">
+                  タップで畳む −
+                </span>
               </div>
               <div className="flex items-center gap-1.5 my-1">
                 {Array.from({ length: 5 }).map((_, i) => (
