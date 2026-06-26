@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg-grad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1e293b" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </radialGradient>
+    <linearGradient id="compass-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="url(#bg-grad)" />
+  <rect width="480" height="480" x="16" y="16" rx="96" fill="none" stroke="#334155" stroke-width="4" opacity="0.3" />
+  
+  <!-- Outer Ring -->
+  <circle cx="256" cy="256" r="160" fill="none" stroke="url(#compass-grad)" stroke-width="12" />
+  <circle cx="256" cy="256" r="140" fill="none" stroke="#334155" stroke-width="2" stroke-dasharray="8 8" />
+  
+  <!-- Cardinal Marks -->
+  <text x="256" y="115" font-family="system-ui, sans-serif" font-weight="900" font-size="20" fill="#38bdf8" text-anchor="middle">N</text>
+  <text x="256" y="415" font-family="system-ui, sans-serif" font-weight="900" font-size="20" fill="#64748b" text-anchor="middle">S</text>
+  <text x="405" y="263" font-family="system-ui, sans-serif" font-weight="900" font-size="20" fill="#64748b" text-anchor="middle">E</text>
+  <text x="107" y="263" font-family="system-ui, sans-serif" font-weight="900" font-size="20" fill="#64748b" text-anchor="middle">W</text>
+  
+  <!-- Compass Needle -->
+  <g transform="rotate(45 256 256)">
+    <!-- North Arrow (Sky Blue) -->
+    <path d="M256 110 L280 235 L256 256 Z" fill="#38bdf8" />
+    <path d="M256 110 L232 235 L256 256 Z" fill="#0ea5e9" />
+    <!-- South Arrow (Slate Gray) -->
+    <path d="M256 402 L280 277 L256 256 Z" fill="#94a3b8" />
+    <path d="M256 402 L232 277 L256 256 Z" fill="#64748b" />
+  </g>
+  
+  <!-- Center Jewel -->
+  <circle cx="256" cy="256" r="14" fill="#0f172a" stroke="#38bdf8" stroke-width="4" />
+</svg>
