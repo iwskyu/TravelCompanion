@@ -90,6 +90,7 @@ export default function App() {
   } | null>(null);
   const [isLoadingRecommendations, setIsLoadingRecommendations] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
 
   
   // カテゴリ選択用 state ("all" = すべて, "weather" = 天候, "driving" = 運転, "climbing" = 登山, "sea" = 海, "disaster" = 防災)
@@ -525,39 +526,67 @@ export default function App() {
   const isMutedRef = useRef<boolean>(false);
   useEffect(() => {
     isMutedRef.current = isMuted;
+    if (isMuted && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+    }
   }, [isMuted]);
 
-  // 音声で読み上げる（上から順番に）
+  // 音声で読み上げる（上から順番に・トグル停止対応）
   const speakRecommendations = (recs: { alert: string; actionGuide: string; spotInfo: string }) => {
     if (!window.speechSynthesis) return;
 
-    // 現在の読み上げを停止
+    // 既に再生中の場合は、今回のクリックで停止する
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+
+    // 新たに再生を開始する
+    setIsSpeaking(true);
     window.speechSynthesis.cancel();
 
     const textToSpeak = [
-      `危険アラート情報。${recs.alert}`,
-      `行動指針。${recs.actionGuide}`,
-      `周辺スポット情報。${recs.spotInfo}`
+      `危険情報。${recs.alert}`,
+      `次の行動。${recs.actionGuide}`,
+      `お役立ち。${recs.spotInfo}`
     ];
 
     let index = 0;
     const speakNext = () => {
-      if (index >= textToSpeak.length) return;
-      // ミュート状態の場合は途中で停止
-      if (isMutedRef.current) return;
+      if (isMutedRef.current) {
+        setIsSpeaking(false);
+        return;
+      }
+      if (index >= textToSpeak.length) {
+        setIsSpeaking(false);
+        return;
+      }
 
       const utterance = new SpeechSynthesisUtterance(textToSpeak[index]);
       utterance.lang = "ja-JP";
       utterance.rate = 1.05; // 自然で明瞭な聞き取りやすいスピード
       utterance.pitch = 1.0;
+      
       utterance.onend = () => {
         index++;
-        speakNext();
+        if (index >= textToSpeak.length) {
+          setIsSpeaking(false);
+        } else {
+          speakNext();
+        }
       };
+
       utterance.onerror = () => {
         index++;
-        speakNext();
+        if (index >= textToSpeak.length) {
+          setIsSpeaking(false);
+        } else {
+          speakNext();
+        }
       };
+
       window.speechSynthesis.speak(utterance);
     };
 
@@ -1529,7 +1558,7 @@ export default function App() {
   const renderMarqueeRow = (icon: string, label: string, labelColor: string, text: string) => {
     return (
       <div className="flex items-center gap-2 bg-slate-900/60 hover:bg-slate-900/80 transition-all px-3 py-1.5 rounded-lg border border-white/5 text-[11px] h-8 overflow-hidden">
-        <span className={`shrink-0 font-bold ${labelColor} flex items-center gap-1 min-w-[115px] text-left select-none`}>
+        <span className={`shrink-0 font-bold ${labelColor} flex items-center gap-1 min-w-[70px] text-left select-none`}>
           <span>{icon}</span>
           <span>{label}:</span>
         </span>
@@ -1549,7 +1578,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen animate-travel-bg text-white font-sans flex flex-col overflow-x-hidden">
+    <div className="min-h-screen animate-travel-bg text-white font-sans flex flex-col overflow-x-hidden pb-44 sm:pb-[180px]">
       {/* ヘッダーエリア */}
       <header className="w-full h-[46px] bg-black/20 border-b border-white/20 relative z-40 px-5 flex items-center justify-between shadow-lg shrink-0">
         {/* ロゴと現在地の概要 */}
@@ -1658,9 +1687,9 @@ export default function App() {
         </div>
       </main>
 
-      {/* 🤖 Gemini リアルタイム旅行推奨情報 (PWAフッター上部追加) */}
-      <div className="w-full max-w-4xl mx-auto px-4 mt-2 mb-4 shrink-0">
-        <div className="bg-slate-950/80 backdrop-blur-md rounded-xl border border-white/10 p-3 shadow-xl">
+      {/* 🤖 Gemini リアルタイム旅行推奨情報 (画面下部に完全に固定されたフローティング・コンパニオン・ドック) */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-950/95 backdrop-blur-md border-t border-white/15 px-4 pt-3 pb-2 shadow-[0_-12px_40px_rgba(0,0,0,0.7)]">
+        <div className="max-w-4xl mx-auto">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <span className="relative flex h-2 w-2">
@@ -1670,7 +1699,7 @@ export default function App() {
                 <span className={`relative inline-flex rounded-full h-2 w-2 ${isLoadingRecommendations ? "bg-sky-500" : "bg-emerald-500"}`}></span>
               </span>
               <span className="text-[11px] font-bold text-slate-200 tracking-wide font-sans flex items-center gap-1 select-none">
-                🤖 AI リアルタイム推奨情報 (5分毎更新)
+                🤖 AI リアルタイム推奨情報 (5分更新)
                 {isLoadingRecommendations && <span className="text-[10px] text-slate-400 animate-pulse font-normal">(更新中...)</span>}
               </span>
             </div>
@@ -1678,14 +1707,18 @@ export default function App() {
               <button
                 onClick={() => recommendations && speakRecommendations(recommendations)}
                 disabled={!recommendations || isLoadingRecommendations}
-                className="flex items-center gap-1 px-2 py-0.5 text-[10px] bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all text-slate-200 font-bold rounded border border-white/5 shadow-sm cursor-pointer select-none"
-                title="音声を再生"
+                className={`flex items-center gap-1 px-2.5 py-1 text-[10px] disabled:opacity-40 disabled:cursor-not-allowed transition-all font-bold rounded border shadow-sm cursor-pointer select-none ${
+                  isSpeaking 
+                    ? "bg-amber-950/40 hover:bg-amber-900/40 border-amber-500/20 text-amber-300 animate-pulse" 
+                    : "bg-slate-800 hover:bg-slate-700 border-white/5 text-slate-200"
+                }`}
+                title={isSpeaking ? "読み上げを停止" : "音声を再生"}
               >
-                📢 読み上げ
+                {isSpeaking ? "⏹ 停止する" : "📢 読み上げ"}
               </button>
               <button
                 onClick={() => setIsMuted(!isMuted)}
-                className={`flex items-center gap-1 px-2 py-0.5 text-[10px] transition-all font-bold rounded border shadow-sm cursor-pointer select-none ${
+                className={`flex items-center gap-1 px-2.5 py-1 text-[10px] transition-all font-bold rounded border shadow-sm cursor-pointer select-none ${
                   isMuted 
                     ? "bg-rose-950/40 hover:bg-rose-900/40 border-rose-500/20 text-rose-300" 
                     : "bg-emerald-950/40 hover:bg-emerald-900/40 border-emerald-500/20 text-emerald-300"
@@ -1697,17 +1730,17 @@ export default function App() {
           </div>
 
           <div className="space-y-1">
-            {renderMarqueeRow("🚨", "警告・危険情報", "text-rose-400", recommendations?.alert || "")}
-            {renderMarqueeRow("🧭", "今後の行動指針", "text-sky-300", recommendations?.actionGuide || "")}
-            {renderMarqueeRow("📍", "周辺お役立ち", "text-emerald-300", recommendations?.spotInfo || "")}
+            {renderMarqueeRow("🚨", "危険情報", "text-rose-400", recommendations?.alert || "")}
+            {renderMarqueeRow("🧭", "次の行動", "text-sky-300", recommendations?.actionGuide || "")}
+            {renderMarqueeRow("📍", "お役立ち", "text-emerald-300", recommendations?.spotInfo || "")}
+          </div>
+
+          {/* フッターを固定ドックの下にスリムに統合して省スペース化 */}
+          <div className="mt-2 text-center text-[9px] text-slate-500 select-none border-t border-white/5 pt-1.5">
+            旅のお供 ver81 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
           </div>
         </div>
       </div>
-
-      {/* フッター */}
-      <footer className="w-full bg-black/40 border-t border-white/5 py-3 text-center text-[10px] text-slate-500 select-none">
-        旅のお供 ver81 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
-      </footer>
     </div>
   );
 }
