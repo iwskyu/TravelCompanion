@@ -69,31 +69,3 @@
   box-shadow: inset 0 0 15px rgba(250, 204, 21, 0.6) !important;
   filter: brightness(1.15);
 }
-
-/* 旅のお供 PWA・自動横スクロール（マーキー）アニメーション */
-@keyframes marquee {
-  0% {
-    transform: translate3d(0, 0, 0);
-  }
-  100% {
-    transform: translate3d(-50%, 0, 0);
-  }
-}
-
-.marquee-container {
-  overflow: hidden;
-  position: relative;
-  width: 100%;
-  white-space: nowrap;
-}
-
-.marquee-content {
-  display: inline-block;
-  padding-left: 10%;
-  animation: marquee 20s linear infinite;
-}
-
-.marquee-content:hover {
-  animation-play-state: paused;
-}
-

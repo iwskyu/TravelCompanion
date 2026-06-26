@@ -81,16 +81,6 @@ export default function App() {
   const [dbLevel, setDbLevel] = useState<number>(0);
   const [isUpdating, setIsUpdating] = useState(false);
   const isPausedRef = useRef<boolean>(false);
-
-  // Gemini リアルタイム旅行推奨情報 (5分毎更新, 3項目：警告、行動指針、周辺スポット)
-  const [recommendations, setRecommendations] = useState<{
-    alert: string;
-    actionGuide: string;
-    spotInfo: string;
-  } | null>(null);
-  const [isLoadingRecommendations, setIsLoadingRecommendations] = useState<boolean>(false);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
-
   
   // カテゴリ選択用 state ("all" = すべて, "weather" = 天候, "driving" = 運転, "climbing" = 登山, "sea" = 海, "disaster" = 防災)
   const [activeCategory, setActiveCategory] = useState<"all" | "weather" | "driving" | "climbing" | "sea" | "disaster">("all");
@@ -518,81 +508,6 @@ export default function App() {
 
     } catch (err) {
       console.error("Failed to update tiles partially:", tileIds, err);
-    }
-  };
-
-  // 音声読み上げ同期管理用 Ref
-  const isMutedRef = useRef<boolean>(false);
-  useEffect(() => {
-    isMutedRef.current = isMuted;
-  }, [isMuted]);
-
-  // 音声で読み上げる（上から順番に）
-  const speakRecommendations = (recs: { alert: string; actionGuide: string; spotInfo: string }) => {
-    if (!window.speechSynthesis) return;
-
-    // 現在の読み上げを停止
-    window.speechSynthesis.cancel();
-
-    const textToSpeak = [
-      `危険アラート情報。${recs.alert}`,
-      `行動指針。${recs.actionGuide}`,
-      `周辺スポット情報。${recs.spotInfo}`
-    ];
-
-    let index = 0;
-    const speakNext = () => {
-      if (index >= textToSpeak.length) return;
-      // ミュート状態の場合は途中で停止
-      if (isMutedRef.current) return;
-
-      const utterance = new SpeechSynthesisUtterance(textToSpeak[index]);
-      utterance.lang = "ja-JP";
-      utterance.rate = 1.05; // 自然で明瞭な聞き取りやすいスピード
-      utterance.pitch = 1.0;
-      utterance.onend = () => {
-        index++;
-        speakNext();
-      };
-      utterance.onerror = () => {
-        index++;
-        speakNext();
-      };
-      window.speechSynthesis.speak(utterance);
-    };
-
-    speakNext();
-  };
-
-  // Gemini推奨情報を取得する
-  const triggerGeminiRecommendations = async (currentData?: CompanionData) => {
-    if (!currentCoords.current) return;
-    setIsLoadingRecommendations(true);
-    try {
-      const { lat, lon } = currentCoords.current;
-      const activeData = currentData || data;
-      const response = await fetch("/api/gemini/recommendations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lat,
-          lon,
-          data: activeData,
-        }),
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to fetch recommendations: ${response.statusText}`);
-      }
-      const result = await response.json();
-      setRecommendations(result);
-      // 自動読み上げ（ミュートでない場合）
-      if (result && !isMutedRef.current) {
-        speakRecommendations(result);
-      }
-    } catch (err) {
-      console.error("Failed to fetch travel recommendations from Gemini:", err);
-    } finally {
-      setIsLoadingRecommendations(false);
     }
   };
 
@@ -1034,11 +949,6 @@ export default function App() {
       setIsUpdating(false);
       lastUpdatedCoords.current = { lat, lon };
       lastUpdatedDateStr.current = dateStr;
-
-      // すべてのAPIの更新が完了した後、少し待って最新のステートをもとにGemini推奨情報を取得
-      setTimeout(() => {
-        triggerGeminiRecommendations();
-      }, 1500);
     });
   };
 
@@ -1422,13 +1332,6 @@ export default function App() {
       updateTileData(["zipcode", "address"]);
     }, 3 * 60 * 1000);
 
-    // --- 5分毎更新 ---
-    // Gemini リアルタイム旅行推奨情報 (警告、行動指針、周辺スポット)
-    const interval5m = setInterval(() => {
-      if (isPausedRef.current) return;
-      triggerGeminiRecommendations();
-    }, 5 * 60 * 1000);
-
     // --- 10分毎更新 ---
     // 海、日の出・日没、大気汚染、満潮・干潮、黄砂 (不要なPOIは完全に削除)
     const interval10m = setInterval(() => {
@@ -1469,7 +1372,6 @@ export default function App() {
       clearInterval(interval3s);
       clearInterval(interval10s);
       clearInterval(interval3m);
-      clearInterval(interval5m);
       clearInterval(interval10m);
       clearInterval(interval15m);
       clearInterval(interval20m);
@@ -1493,29 +1395,6 @@ export default function App() {
   const addressBgClass = isAddressFlashing
     ? "bg-yellow-400 text-slate-950 border-yellow-300"
     : "bg-slate-950/85 text-white border-white/10";
-
-  // マーカー行表示用ヘルパー
-  const renderMarqueeRow = (icon: string, label: string, labelColor: string, text: string) => {
-    return (
-      <div className="flex items-center gap-2 bg-slate-900/60 hover:bg-slate-900/80 transition-all px-3 py-1.5 rounded-lg border border-white/5 text-[11px] h-8 overflow-hidden">
-        <span className={`shrink-0 font-bold ${labelColor} flex items-center gap-1 min-w-[115px] text-left select-none`}>
-          <span>{icon}</span>
-          <span>{label}:</span>
-        </span>
-        <div className="marquee-container flex-1">
-          <div className="marquee-content text-slate-200 font-sans">
-            {text ? (
-              <>
-                {text} <span className="mx-8 text-slate-500 font-bold">✦</span> {text} <span className="mx-8 text-slate-500 font-bold">✦</span>
-              </>
-            ) : (
-              <span className="text-slate-400">現在地と周辺データを分析中...</span>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   return (
     <div className="min-h-screen animate-travel-bg text-white font-sans flex flex-col overflow-x-hidden">
@@ -1626,52 +1505,6 @@ export default function App() {
           })}
         </div>
       </main>
-
-      {/* 🤖 Gemini リアルタイム旅行推奨情報 (PWAフッター上部追加) */}
-      <div className="w-full max-w-4xl mx-auto px-4 mt-2 mb-4 shrink-0">
-        <div className="bg-slate-950/80 backdrop-blur-md rounded-xl border border-white/10 p-3 shadow-xl">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-2 w-2">
-                {isLoadingRecommendations ? (
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
-                ) : null}
-                <span className={`relative inline-flex rounded-full h-2 w-2 ${isLoadingRecommendations ? "bg-sky-500" : "bg-emerald-500"}`}></span>
-              </span>
-              <span className="text-[11px] font-bold text-slate-200 tracking-wide font-sans flex items-center gap-1 select-none">
-                🤖 AI リアルタイム推奨情報 (5分毎更新)
-                {isLoadingRecommendations && <span className="text-[10px] text-slate-400 animate-pulse font-normal">(更新中...)</span>}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => recommendations && speakRecommendations(recommendations)}
-                disabled={!recommendations || isLoadingRecommendations}
-                className="flex items-center gap-1 px-2 py-0.5 text-[10px] bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all text-slate-200 font-bold rounded border border-white/5 shadow-sm cursor-pointer select-none"
-                title="音声を再生"
-              >
-                📢 読み上げ
-              </button>
-              <button
-                onClick={() => setIsMuted(!isMuted)}
-                className={`flex items-center gap-1 px-2 py-0.5 text-[10px] transition-all font-bold rounded border shadow-sm cursor-pointer select-none ${
-                  isMuted 
-                    ? "bg-rose-950/40 hover:bg-rose-900/40 border-rose-500/20 text-rose-300" 
-                    : "bg-emerald-950/40 hover:bg-emerald-900/40 border-emerald-500/20 text-emerald-300"
-                }`}
-              >
-                {isMuted ? "🔇 ミュート中" : "🔊 自動再生オン"}
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            {renderMarqueeRow("🚨", "警告・危険情報", "text-rose-400", recommendations?.alert || "")}
-            {renderMarqueeRow("🧭", "今後の行動指針", "text-sky-300", recommendations?.actionGuide || "")}
-            {renderMarqueeRow("📍", "周辺お役立ち", "text-emerald-300", recommendations?.spotInfo || "")}
-          </div>
-        </div>
-      </div>
 
       {/* フッター */}
       <footer className="w-full bg-black/40 border-t border-white/5 py-3 text-center text-[10px] text-slate-500 select-none">

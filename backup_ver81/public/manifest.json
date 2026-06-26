@@ -1,0 +1,25 @@
+{
+  "theme_color": "#0f172a",
+  "background_color": "#0f172a",
+  "display": "standalone",
+  "scope": "./",
+  "start_url": "./",
+  "name": "旅のお供",
+  "short_name": "旅のお供",
+  "description": "旅先で役立つ情報をリアルタイムに網羅する、あなただけの最強の旅のお供ツール。",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
