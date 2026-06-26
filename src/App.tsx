@@ -566,7 +566,10 @@ export default function App() {
 
   // Gemini推奨情報を取得する
   const triggerGeminiRecommendations = async (currentData?: CompanionData) => {
-    if (!currentCoords.current) return;
+    if (!currentCoords.current) {
+      console.warn("GPS現在地が未取得のため、デフォルト座標（東京駅）を仮設定してGemini推奨情報を取得します。");
+      currentCoords.current = { lat: 35.6812, lon: 139.7671 };
+    }
     setIsLoadingRecommendations(true);
     try {
       const { lat, lon } = currentCoords.current;
@@ -591,6 +594,16 @@ export default function App() {
       }
     } catch (err) {
       console.error("Failed to fetch travel recommendations from Gemini:", err);
+      // エラー発生時は、安全に日本語のフォールバック表示（分析中...で止まるのを防ぐ）
+      const fallbackResult = {
+        alert: "⚠️ AI推奨情報の取得に失敗しました。電波状況を確認し、一括更新ボタンをお試しください。",
+        actionGuide: "周囲の天候変化、日没時間、体感温度等に留意しながら安全第一で行動してください。",
+        spotInfo: "この先1〜3km圏内の最寄りコンビニや道の駅で、最新の地域マップや休憩所をご確認ください。"
+      };
+      setRecommendations(fallbackResult);
+      if (!isMutedRef.current) {
+        speakRecommendations(fallbackResult);
+      }
     } finally {
       setIsLoadingRecommendations(false);
     }
@@ -617,16 +630,8 @@ export default function App() {
     }
 
     if (!currentCoords.current) {
-      // GPSが取得できなかった場合は、すべてのタイルをキャッシュ/未取得グレーアウトにして即終了する
-      setCachedTiles((prev) => {
-        const next = { ...prev };
-        ALL_TILES_CONFIG.forEach((config) => {
-          next[config.id] = true;
-        });
-        return next;
-      });
-      setIsUpdating(false);
-      return;
+      console.warn("GPS現在地の取得に失敗したため、デフォルト座標（東京駅）を仮に使用して情報を表示・更新します。");
+      currentCoords.current = { lat: 35.6812, lon: 139.7671 };
     }
 
     const { lat, lon } = currentCoords.current;
@@ -735,6 +740,13 @@ export default function App() {
       immediateTileIds.push("prefecturalCapital");
     }
 
+    // ローカルで全情報をリアルタイムにマージして最後にGeminiへ渡す
+    const mergedData: CompanionData = {
+      ...data,
+      ...localCalculatedData,
+      elevation: latestGps.current.elevation !== null ? latestGps.current.elevation : data.elevation,
+    };
+
     setData((prev) => ({
       ...prev,
       ...localCalculatedData,
@@ -764,6 +776,8 @@ export default function App() {
       try {
         const res = await fetchAddressAndZip(lat, lon);
         const stamp = Date.now();
+        mergedData.address = res.address;
+        mergedData.zipcode = res.zipcode;
         setData((prev) => ({
           ...prev,
           address: res.address,
@@ -809,6 +823,17 @@ export default function App() {
         } else if (gpsAlt !== null) {
           finalElevation = gpsAlt;
         }
+
+        mergedData.weather = res.weather;
+        mergedData.precipitation = res.precipitation;
+        mergedData.rainCloudApproach = res.rainCloudApproach;
+        mergedData.uvIndex = res.uvIndex;
+        mergedData.sunrise = finalSunrise;
+        mergedData.sunset = finalSunset;
+        mergedData.wind = res.wind;
+        mergedData.humidity = res.humidity;
+        mergedData.elevation = finalElevation !== null ? finalElevation : mergedData.elevation;
+        mergedData.magicHour = magicHourVal;
 
         setData((prev) => ({
           ...prev,
@@ -860,6 +885,7 @@ export default function App() {
       try {
         const res = await fetchAirQualityAndPollen(lat, lon);
         const stamp = Date.now();
+        mergedData.airQuality = res;
         setData((prev) => ({
           ...prev,
           airQuality: res,
@@ -894,6 +920,8 @@ export default function App() {
       try {
         const res = await fetchSeaTemperature(lat, lon);
         const stamp = Date.now();
+        mergedData.seaTemp = res.seaTemp;
+        mergedData.waveInfo = res.waveInfo;
         setData((prev) => ({
           ...prev,
           seaTemp: res.seaTemp,
@@ -937,6 +965,9 @@ export default function App() {
         const speedKmh = latestGps.current.speed !== null ? Math.round(latestGps.current.speed * 3.6) : 0;
         const traffic = calculateTrafficStatus(lat, lon, speedKmh);
         
+        Object.assign(mergedData, res);
+        mergedData.trafficStatus = traffic;
+
         setData((prev) => ({
           ...prev,
           ...res,
@@ -974,6 +1005,7 @@ export default function App() {
       try {
         const res = await fetchEarthquakeInfo();
         const stamp = Date.now();
+        mergedData.earthquake = res;
         setData((prev) => ({
           ...prev,
           earthquake: res,
@@ -1000,6 +1032,7 @@ export default function App() {
       try {
         const res = calculatePowerUsage(lat, lon);
         const stamp = Date.now();
+        mergedData.powerUsage = res;
         setData((prev) => ({
           ...prev,
           powerUsage: res,
@@ -1035,10 +1068,8 @@ export default function App() {
       lastUpdatedCoords.current = { lat, lon };
       lastUpdatedDateStr.current = dateStr;
 
-      // すべてのAPIの更新が完了した後、少し待って最新のステートをもとにGemini推奨情報を取得
-      setTimeout(() => {
-        triggerGeminiRecommendations();
-      }, 1500);
+      // 最新の全てのデータを直に流し込んで、Geminiの推薦情報を同期更新＆自動音声読み上げ
+      triggerGeminiRecommendations(mergedData);
     });
   };
 
