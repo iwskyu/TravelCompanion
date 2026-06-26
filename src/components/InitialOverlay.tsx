@@ -75,9 +75,9 @@ export function InitialOverlay({ onStart }: InitialOverlayProps) {
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 0.6 }}
-            className="w-20 h-20 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/25 mx-auto"
+            className="w-20 h-20 bg-gradient-to-tr from-slate-900 to-slate-950 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/10 mx-auto border border-slate-800"
           >
-            <Compass className="w-12 h-12 text-white animate-[spin_8s_linear_infinite]" />
+            <img src="/icon.svg" className="w-16 h-16 animate-[spin_30s_linear_infinite]" alt="旅のお供" referrerPolicy="no-referrer" />
           </motion.div>
           
           <motion.h1

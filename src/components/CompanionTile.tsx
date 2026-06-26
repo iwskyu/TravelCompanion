@@ -15,6 +15,8 @@ interface CompanionTileProps {
   lastUpdatedTime: number; // 最終更新のタイムスタンプ
   onClick?: () => void; // タップ/クリックで即情報更新するイベントハンドラー
   isCached?: boolean; // キャッシュ判別フラグ（フェッチ失敗時に薄グレーアウト表示にする）
+  isSelectMode?: boolean; // 複数移動用の選択モードか
+  isSelected?: boolean;   // 複数移動用の選択状態か
 }
 
 export function CompanionTile({
@@ -24,6 +26,8 @@ export function CompanionTile({
   lastUpdatedTime,
   onClick,
   isCached = false,
+  isSelectMode = false,
+  isSelected = false,
 }: CompanionTileProps) {
   const [isFlashing, setIsFlashing] = useState(false);
 
@@ -231,9 +235,30 @@ export function CompanionTile({
       className={`relative p-[1px] rounded-xl overflow-hidden transition-all duration-300 ease-out h-[72px] sm:h-20 md:h-24 select-none ${
         sunsetStyle ? "" : `bg-gradient-to-br ${gradientClass}`
       } ${
-        onClick ? "cursor-pointer active:brightness-90 hover:brightness-110 hover:shadow-lg hover:shadow-cyan-500/10" : ""
+        isSelectMode 
+          ? isSelected 
+            ? "ring-2 ring-sky-400 scale-[0.97] brightness-110 shadow-[0_0_12px_rgba(56,189,248,0.4)]" 
+            : "brightness-75" 
+          : onClick 
+            ? "cursor-pointer active:brightness-90 hover:brightness-110 hover:shadow-lg hover:shadow-cyan-500/10" 
+            : ""
       }`}
     >
+      {/* 複数並び替え時の選択インジケータ */}
+      {isSelectMode && (
+        <div className="absolute top-1.5 right-1.5 z-10">
+          {isSelected ? (
+            <span className="w-4.5 h-4.5 rounded-full bg-sky-400 text-slate-950 flex items-center justify-center text-[10px] font-black border border-sky-200 shadow-md">
+              ✓
+            </span>
+          ) : (
+            <span className="w-4.5 h-4.5 rounded-full border-1.5 border-slate-500 bg-slate-950/90 flex items-center justify-center text-[8px] font-bold text-transparent">
+              ○
+            </span>
+          )}
+        </div>
+      )}
+
       <div
         className={`w-full h-full flex flex-col justify-center px-2 py-1 rounded-[11px] overflow-hidden ${
           isMovingFast
@@ -244,7 +269,9 @@ export function CompanionTile({
                 ? "bg-yellow-500/10"
                 : isCached
                   ? "bg-slate-950/90 text-slate-400 opacity-60 saturate-50"
-                  : "bg-slate-900/85 hover:bg-slate-800/85"
+                  : isSelected
+                    ? "bg-sky-950/40"
+                    : "bg-slate-900/85 hover:bg-slate-800/85"
         } transition-all duration-300`}
       >
         {/* 項目名（小さく表示） */}

@@ -36,6 +36,30 @@ function getAiClient(): GoogleGenAI {
   return aiClient;
 }
 
+//// API Route for Reverse Geocoding (Nominatim Proxy to bypass CORS & forbidden header blocks on mobile)
+app.get("/api/geocode", async (req, res) => {
+  try {
+    const { lat, lon } = req.query;
+    if (!lat || !lon) {
+      return res.status(400).json({ error: "Missing lat/lon parameters" });
+    }
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept-language=ja`;
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "TravelCompanionApp/64.0 (iwskyu@gmail.com)",
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Nominatim returned status ${response.status}`);
+    }
+    const json = await response.json();
+    return res.json(json);
+  } catch (error: any) {
+    console.error("Geocoding proxy failed:", error.message || error);
+    return res.status(500).json({ error: "Failed to reverse geocode location" });
+  }
+});
+
 //// API Route for Gemini Travel Recommendations
 app.post("/api/gemini/recommendations", async (req, res) => {
   try {
@@ -79,6 +103,7 @@ app.post("/api/gemini/recommendations", async (req, res) => {
     }
 
     const prompt = `
+現在の情報から重要度順に3つだけ教えて。
 以下の周辺環境データと【最優先テーマ】に基づき、旅行者のための超ローカル情報を日本語かつ極限まで簡潔に生成してください。
 
 【最優先テーマ】
@@ -94,10 +119,23 @@ ${categoryPriorityInstruction}
 潮汐・波: 満/干: ${data?.highTide || ""}/${data?.lowTide || ""} / 波: ${data?.waveInfo ? `${data.waveInfo.height}m` : ""}
 騒音・防災・交通: 騒音 ${data?.dbLevel || "0"}dB / 地震: ${data?.earthquake || "正常"} / 電力: ${data?.powerUsage?.rate || "0"}% / 道路: ${data?.trafficStatus || "順調"}
 
-【出力条件（爆速化のため絶対に厳守）】
+【出力モードの厳密な判定と生成規則】
+
+1. 【災害・重大な緊急時モード】
+もし地震データに「震度5」以上の揺れがある、または重大な警報・危機が検知されている場合は、以下の通りに作成：
+- alert：危険情報を極めて端的に表示（例：山梨県で震度6弱発生。横浜市西区では震度4程度の揺れ。今後数日は余震に注意。）
+- actionGuide：命を守る次の行動を端的に表示（例：エレベーターを使用しない。ガス臭がないか確認する。モバイルバッテリーを充電。家族へ安否連絡。）
+- spotInfo：鉄道やインフラ状況を端的に表示（例：横浜駅周辺の鉄道運行状況を確認してください。東海道新幹線は運転見合わせの可能性があります。）
+
+2. 【通常・安全時モード】
+上記のような震度5以上の大地震や致命的な災害が起きていない、日常の平穏な状況では、必ず以下のプレフィックスを冒頭に付与した3文としてください：
+- alert：『⭐今日一番重要：[最優先の注意、気候や環境データに基づくお役立ち警告（例：雨が30分後に来ます。）]』
+- actionGuide：『⭐今行くべき場所：[現在地周辺で今行くべきローカルスポットや店舗。店名、商品名、および価格（例：徒歩200m先の○○コンビニ、または○○店の焼き鳥150円）を必ず含むこと。]』
+- spotInfo：『⭐今日しか見られない：[現在地や今日の時間帯、天候にのみ合致した希少な自然体験、絶景、夕焼け指数、またはお役立ち情報（例：富士山の視程が高く、夕焼け指数85点です。）]』
+
+【出力条件（絶対に厳守）】
 - 各項目は、日本語で「完全に1文のみ」、かつ「45〜65文字以内」にまとめてください。
 - 余計な枕詞、挨拶、まとめ文は一切含めないでください。
-- 実在する具体的な店舗名や、おやつの具体的な金額（例：○○カフェのクッキー250円）を1つ必ず含めてください。
 `;
 
     // 爆速モデルや安定した標準モデル（gemini-3.5-flash, gemini-3.1-flash-lite）を最優先で使用
@@ -111,7 +149,7 @@ ${categoryPriorityInstruction}
           model: modelName,
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           config: {
-            systemInstruction: "あなたは爆速でお供情報を返すAIです。余計な説明や挨拶は完全に排除し、指定されたスキーマに従って日本語の1文（45〜65文字）で回答してください。実在する特定の店舗名、商品名、および価格（例：○○カフェのクッキー250円）を必ず1つ含めてください。",
+            systemInstruction: "あなたは爆速でお供情報を返すAIコンパニオンです。余計な説明や挨拶は完全に排除し、指定されたスキーマに従って、災害・緊急時モードか、通常時（⭐今日一番重要：、⭐今行くべき場所：、⭐今日しか見られない：）の規則を厳密に守り、日本語の完全に1文（45〜65文字）で回答してください。実在する特定の店舗名、商品名、価格は通常時のactionGuideに必ず含めてください。",
             responseMimeType: "application/json",
             temperature: 0.1, // 決定論的な出力を高めて思考速度を極限まで引き上げる
             responseSchema: {
@@ -119,15 +157,15 @@ ${categoryPriorityInstruction}
               properties: {
                 alert: {
                   type: Type.STRING,
-                  description: "現在の気象や環境、カテゴリに即した注意。1文で45〜65文字以内。",
+                  description: "災害・緊急時は危険情報の端的な要約。通常時は『⭐今日一番重要：』から始まる1文。45〜65文字以内。",
                 },
                 actionGuide: {
                   type: Type.STRING,
-                  description: "今取るべき行動やアドバイス。1文で45〜65文字以内。",
+                  description: "災害・緊急時は命を守る行動要約。通常時は『⭐今行くべき場所：』から始まる1文（店名と価格を必ず含む）。45〜65文字以内。",
                 },
                 spotInfo: {
                   type: Type.STRING,
-                  description: "具体的なローカル店舗、商品、価格、営業時間。1文で45〜65文字以内。",
+                  description: "災害・緊急時は交通状況。通常時は『⭐今日しか見られない：』から始まるお役立ち・絶景等の1文。45〜65文字以内。",
                 },
               },
               required: ["alert", "actionGuide", "spotInfo"],

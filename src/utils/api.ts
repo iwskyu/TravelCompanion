@@ -86,12 +86,8 @@ export async function fetchAddressAndZip(
 
   const runFetch = async () => {
     try {
-      const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept-language=ja`;
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": "TravelCompanionApp/64.0 (iwskyu@gmail.com)",
-        },
-      });
+      const url = `/api/geocode?lat=${lat}&lon=${lon}`;
+      const res = await fetch(url);
       if (!res.ok) throw new Error("Nominatim failed");
       const json = await res.json();
       const addr = json.address;
@@ -151,6 +147,7 @@ export async function fetchWeatherAndMeteorology(
   wind: { speed: number; bearing: number; direction: string } | null;
   humidity: number | null;
   elevation: number | null;
+  pressure: number | null;
 }> {
   const now = Date.now();
   if (cache.meteo) {
@@ -173,7 +170,7 @@ export async function fetchWeatherAndMeteorology(
 
   const runFetch = async () => {
     try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m,wind_direction_10m&hourly=precipitation_probability,uv_index&daily=sunrise,sunset,temperature_2m_max,temperature_2m_min&elevation=nan&timezone=auto`;
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl&hourly=precipitation_probability,uv_index&daily=sunrise,sunset,temperature_2m_max,temperature_2m_min&elevation=nan&timezone=auto`;
       const res = await fetch(url);
       if (!res.ok) throw new Error("Open-Meteo failed");
       const json = await res.json();
@@ -233,6 +230,9 @@ export async function fetchWeatherAndMeteorology(
       // 標高
       const elevation = json.elevation !== undefined && json.elevation !== null ? Math.round(json.elevation) : null;
 
+      // 気圧
+      const pressure = current?.pressure_msl !== undefined ? current.pressure_msl : null;
+
       const result = {
         weather,
         precipitation,
@@ -243,6 +243,7 @@ export async function fetchWeatherAndMeteorology(
         wind,
         humidity,
         elevation,
+        pressure,
       };
 
       cache.meteo = { lat, lon, timestamp: Date.now(), data: result };
@@ -262,6 +263,7 @@ export async function fetchWeatherAndMeteorology(
         wind: null,
         humidity: null,
         elevation: null,
+        pressure: null,
       };
     } finally {
       delete pendingPromises.meteo;

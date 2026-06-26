@@ -4,6 +4,7 @@
  */
 
 import React from "react";
+import { motion } from "motion/react";
 import { TileConfig, CompanionData } from "../types";
 import { getRelativeArrow } from "./geo";
 import { getWeatherEmojiAndName } from "./api";
@@ -52,10 +53,33 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     label: "方角",
     emoji: "🧭",
     borderColorClass: "border-white",
-    render: (data) => {
-      if (!data.bearing) return "-";
-      const arrow = getArrow(data.bearing.angle, null);
-      return `${data.bearing.direction}\n${data.bearing.angle}° ${arrow}`;
+    render: (data, deviceHeading) => {
+      const headingToUse = deviceHeading !== null ? deviceHeading : (data.bearing ? data.bearing.angle : null);
+      if (headingToUse === null) return "-";
+
+      const angle = headingToUse;
+      const direction = data.bearing ? data.bearing.direction : "北";
+
+      return (
+        <div className="flex items-center justify-center gap-2 w-full h-full py-1">
+          <motion.div
+            animate={{ rotate: -angle }}
+            transition={{ type: "spring", stiffness: 80, damping: 18 }}
+            className="w-10 h-10 rounded-full border border-slate-700 bg-slate-950 text-sky-400 flex items-center justify-center text-[10px] font-bold relative shrink-0 shadow-inner"
+            style={{ originX: 0.5, originY: 0.5 }}
+          >
+            <span className="absolute top-1 text-[8px] text-rose-500 font-black leading-none">N</span>
+            <div className="w-[1.5px] h-3 bg-rose-500 rounded-full absolute top-1.5" />
+            <div className="w-[1.5px] h-3 bg-slate-600 rounded-full absolute bottom-1.5" />
+            <div className="w-1.5 h-1.5 rounded-full bg-slate-400 absolute" />
+          </motion.div>
+          
+          <div className="flex flex-col items-start leading-none shrink-0">
+            <span className="text-[15px] font-black text-slate-200">{direction}</span>
+            <span className="text-[11px] font-mono font-bold text-slate-400 mt-1">{Math.round(angle)}°</span>
+          </div>
+        </div>
+      );
     },
     categories: ["driving", "climbing", "sea"],
   },
@@ -167,7 +191,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
   // =========================================================================
   {
     id: "elevation",
-    label: "標高 (気圧・GPS)",
+    label: "標高",
     emoji: "🗻",
     borderColorClass: "border-purple",
     render: (data) => {
@@ -455,5 +479,30 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     borderColorClass: "border-red",
     render: (data) => data.trafficStatus || "順調",
     categories: ["driving", "disaster"],
+  },
+  {
+    id: "pressure",
+    label: "気圧",
+    emoji: "🌀",
+    borderColorClass: "border-indigo",
+    render: (data) => {
+      if (data.pressure === null || data.pressure === undefined) return "-";
+      return `${Math.round(data.pressure)} hPa`;
+    },
+    categories: ["weather", "climbing"],
+  },
+  {
+    id: "maxLeanAngle",
+    label: "最大バンク角",
+    emoji: "🏍️",
+    borderColorClass: "border-orange",
+    render: (data) => {
+      if (data.confirmResetLean) {
+        return "タップしてリセット";
+      }
+      if (!data.maxLeanAngle) return "左: 0° | 右: 0°";
+      return `左: ${data.maxLeanAngle.left}°\n右: ${data.maxLeanAngle.right}°`;
+    },
+    categories: ["driving"],
   },
 ];

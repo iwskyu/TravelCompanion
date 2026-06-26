@@ -75,6 +75,152 @@ const INITIAL_COMPANION_DATA: CompanionData = {
   accumulatedDistance: 0,
 };
 
+// --- 今日の旅コンディションの計算ロジック ---
+interface TravelCondition {
+  score: number;
+  stars: number;
+  remarks: string[];
+}
+
+function getTravelCondition(data: CompanionData): TravelCondition {
+  let score = 70; // ベースライン
+  const remarks: string[] = [];
+
+  // 天気コードに基づく判定
+  if (data.weather) {
+    const code = data.weather.code;
+    if (code === 0) {
+      score += 15;
+      remarks.push("晴天で絶好の行楽日和");
+    } else if (code === 1 || code === 2 || code === 3) {
+      score += 8;
+      remarks.push("穏やかな晴れ間");
+    } else if (code >= 51 && code <= 65) {
+      score -= 25;
+      remarks.push("雨が降っています");
+    } else if (code >= 95) {
+      score -= 35;
+      remarks.push("荒天・雷雨に厳重注意");
+    } else {
+      remarks.push("曇りがちなお天気");
+    }
+
+    // 気温の快適さ
+    const temp = data.weather.temp;
+    if (temp >= 15 && temp <= 25) {
+      score += 10;
+      remarks.push("車中泊・散策に快適な気温");
+    } else if (temp < 10) {
+      score -= 10;
+      remarks.push("肌寒いため防寒対策を");
+    } else if (temp > 30) {
+      score -= 15;
+      remarks.push("熱中症に警戒してください");
+    }
+  } else {
+    remarks.push("お天気データ準備中");
+  }
+
+  // 雨雲接近
+  if (data.rainCloudApproach) {
+    if (data.rainCloudApproach.includes("分後")) {
+      score -= 20;
+      remarks.push(`雨雲が接近中（${data.rainCloudApproach}）`);
+    } else if (data.rainCloudApproach.includes("心配なし") || data.rainCloudApproach.includes("正常") || data.rainCloudApproach.includes("なし")) {
+      score += 5;
+      remarks.push("直近の雨の心配はありません");
+    }
+  }
+
+  // 風速
+  if (data.wind) {
+    const wSpeed = data.wind.speed;
+    if (wSpeed < 3.0) {
+      score += 5;
+      remarks.push("風が弱く非常に穏やか");
+    } else if (wSpeed > 7.0) {
+      score -= 10;
+      remarks.push("風が強く吹き荒れています");
+    }
+  }
+
+  // 富士山の見えやすさ
+  if (data.weather && data.humidity !== null) {
+    const code = data.weather.code;
+    const hum = data.humidity;
+    if ((code === 0 || code === 1) && hum < 65) {
+      score += 5;
+      remarks.push("富士山が見えやすい視程です");
+    }
+  }
+
+  // 夕焼け期待度
+  if (data.weather && data.sunset && data.sunset.time !== "-") {
+    const code = data.weather.code;
+    if (code === 0 || code === 1 || code === 2) {
+      score += 5;
+      remarks.push("夕焼けが期待できる空模様");
+    }
+  }
+
+  // スコア範囲を10点〜100点に制限
+  score = Math.max(10, Math.min(100, score));
+  // 星の数 (1〜5)
+  const stars = Math.max(1, Math.min(5, Math.round(score / 20)));
+
+  if (remarks.length === 0) {
+    remarks.push("標準的な旅行コンディション");
+  }
+
+  const uniqueRemarks = Array.from(new Set(remarks)).slice(0, 4);
+
+  return { score, stars, remarks: uniqueRemarks };
+}
+
+// --- オフライン時の避難場所リストフォールバック ---
+function getFallbackShelters(address: string | null): string[] {
+  if (!address) {
+    return [
+      "広域避難場所：近隣の指定小中学校・大規模公園",
+      "一時避難場所：最寄りの耐震ビル・神社仏閣",
+      "二次避難所（福祉避難所）：公民館・コミュニティセンター"
+    ];
+  }
+  
+  const prefMatch = address.match(/(東京都|神奈川県|埼玉県|千葉県|愛知県|大阪府|京都府|兵庫県|福岡県|山梨県|静岡県)/);
+  const pref = prefMatch ? prefMatch[1] : "";
+  
+  if (pref === "東京都") {
+    return [
+      "新宿御苑 (新宿区) [広域避難場所]",
+      "代々木公園 (渋谷区) [広域避難場所]",
+      "上野恩賜公園 (台東区) [広域避難場所]",
+      "都立芝公園 (港区) [広域避難場所]",
+      "最寄りの区立小学校・中学校体育館 [指定避難所]"
+    ];
+  } else if (pref === "神奈川県") {
+    return [
+      "みなとみらい臨時避難空地 (横浜市西区) [広域避難所]",
+      "山下公園 (横浜市中区) [広域避難所]",
+      "三ツ沢公園 (横浜市神奈川区) [広域避難所]",
+      "最寄りの市立小学校・中学校体育館 [指定避難所]"
+    ];
+  } else if (pref === "山梨県") {
+    return [
+      "小瀬スポーツ公園 (甲府市) [広域避難場所]",
+      "山梨県立科学館周辺 (甲府市) [広域避難場所]",
+      "富士急ハイランド第1駐車場 (富士吉田市) [広域避難所]",
+      "最寄りの市立・町立小学校体育館 [指定避難所]"
+    ];
+  } else {
+    return [
+      `${pref || "現在地"}の指定緊急避難場所（大規模公園・緑地・広場）`,
+      `${pref || "現在地"}の指定避難所（最寄りの公立小中学校・市民センター）`,
+      "福祉避難所（公民館・保健センター）"
+    ];
+  }
+}
+
 export default function App() {
   const [started, setStarted] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -98,19 +244,143 @@ export default function App() {
   const lastGeminiTimeRef = useRef<number>(0);
   const categoryDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
+  const [maxLean, setMaxLean] = useState<{ left: number; right: number }>(() => {
+    try {
+      const saved = localStorage.getItem("maxLeanAngle");
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error("Failed to parse maxLeanAngle from localStorage", e);
+    }
+    return { left: 0, right: 0 };
+  });
+
+  const maxLeanRef = useRef(maxLean);
+  useEffect(() => {
+    maxLeanRef.current = maxLean;
+    localStorage.setItem("maxLeanAngle", JSON.stringify(maxLean));
+    setData((prev) => ({ ...prev, maxLeanAngle: maxLean }));
+  }, [maxLean]);
+
   // Gemini リアルタイム旅行推奨情報 (5分毎更新, 3項目：警告、行動指針、周辺スポット)
   const [recommendations, setRecommendations] = useState<{
     alert: string;
     actionGuide: string;
     spotInfo: string;
-  } | null>(null);
+  } | null>(() => {
+    try {
+      const saved = localStorage.getItem("recommendations");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error("Failed to parse recommendations from localStorage", e);
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    if (recommendations) {
+      localStorage.setItem("recommendations", JSON.stringify(recommendations));
+    }
+  }, [recommendations]);
+
   const [isLoadingRecommendations, setIsLoadingRecommendations] = useState<boolean>(false);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [isMuted, setIsMuted] = useState<boolean>(true);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
 
+  // オフライン減災モードの判定
+  const [isOfflineMitigationMode, setIsOfflineMitigationMode] = useState<boolean>(false);
+
+  // AI更新のカウントダウン秒数（初期値5分=300秒）
+  const [countdownSec, setCountdownSec] = useState<number>(300);
+
+  // タップ詳細表示用モーダルステート
+  const [selectedFullText, setSelectedFullText] = useState<{ label: string; text: string } | null>(null);
+
   
-  // カテゴリ選択用 state ("all" = すべて, "weather" = 天候, "driving" = 運転, "climbing" = 登山, "sea" = 海, "disaster" = 防災)
-  const [activeCategory, setActiveCategory] = useState<"all" | "weather" | "driving" | "climbing" | "sea" | "disaster">("all");
+  // カテゴリ選択用 state ("all" = すべて, "weather" = 天候, "driving" = 運転, "climbing" = 登山, "sea" = 海, "disaster" = 防災, "custom" = カスタム)
+  const [activeCategory, setActiveCategory] = useState<"all" | "weather" | "driving" | "climbing" | "sea" | "disaster" | "custom">("all");
+
+  const [customCategoryTileIds, setCustomCategoryTileIds] = useState<TileId[]>(() => {
+    try {
+      const saved = localStorage.getItem("customCategoryTileIds");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    return ["weather", "speed", "elevation", "bearing", "tilt", "pressure", "maxLeanAngle"];
+  });
+
+  useEffect(() => {
+    localStorage.setItem("customCategoryTileIds", JSON.stringify(customCategoryTileIds));
+  }, [customCategoryTileIds]);
+
+  const [isCustomSettingOpen, setIsCustomSettingOpen] = useState(false);
+
+  // 複数タイルの一括移動用
+  const [isSelectMode, setIsSelectMode] = useState<boolean>(false);
+  const [selectedTileIds, setSelectedTileIds] = useState<TileId[]>([]);
+
+  const toggleSelectTile = (tileId: TileId) => {
+    setSelectedTileIds((prev) => {
+      if (prev.includes(tileId)) {
+        return prev.filter((id) => id !== tileId);
+      } else {
+        return [...prev, tileId];
+      }
+    });
+  };
+
+  const moveSelectedTiles = (direction: "left" | "right") => {
+    if (selectedTileIds.length === 0) return;
+    setTileOrder((prev) => {
+      const next = [...prev];
+      if (direction === "left") {
+        for (let i = 1; i < next.length; i++) {
+          const currentId = next[i];
+          if (selectedTileIds.includes(currentId)) {
+            const prevId = next[i - 1];
+            if (!selectedTileIds.includes(prevId)) {
+              next[i - 1] = currentId;
+              next[i] = prevId;
+            }
+          }
+        }
+      } else {
+        for (let i = next.length - 2; i >= 0; i--) {
+          const currentId = next[i];
+          if (selectedTileIds.includes(currentId)) {
+            const nextId = next[i + 1];
+            if (!selectedTileIds.includes(nextId)) {
+              next[i + 1] = currentId;
+              next[i] = nextId;
+            }
+          }
+        }
+      }
+      localStorage.setItem("tile_order", JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const gatherSelectedTiles = () => {
+    if (selectedTileIds.length <= 1) return;
+    setTileOrder((prev) => {
+      const firstIdx = prev.findIndex(id => selectedTileIds.includes(id));
+      if (firstIdx === -1) return prev;
+      
+      const unselected = prev.filter(id => !selectedTileIds.includes(id));
+      const selected = prev.filter(id => selectedTileIds.includes(id));
+      
+      const next = [
+        ...unselected.slice(0, firstIdx),
+        ...selected,
+        ...unselected.slice(firstIdx)
+      ];
+      localStorage.setItem("tile_order", JSON.stringify(next));
+      return next;
+    });
+  };
 
   // カテゴリタブが切り替わったときにAI情報を即座に優先更新する（デバウンスを挟んで連打を防止）
   useEffect(() => {
@@ -556,7 +826,7 @@ export default function App() {
   };
 
   // 音声読み上げ同期管理用 Ref
-  const isMutedRef = useRef<boolean>(false);
+  const isMutedRef = useRef<boolean>(true);
   useEffect(() => {
     isMutedRef.current = isMuted;
     if (isMuted && window.speechSynthesis) {
@@ -682,6 +952,7 @@ export default function App() {
       }
       const result = await response.json();
       setRecommendations(result);
+      setIsOfflineMitigationMode(false);
       
       // 成功時、タイムスタンプを更新
       lastGeminiTimeRef.current = Date.now();
@@ -692,11 +963,13 @@ export default function App() {
       }
     } catch (err) {
       console.error("Failed to fetch travel recommendations from Gemini:", err);
-      // エラー発生時は、安全に日本語のフォールバック表示（分析中...で止まるのを防ぐ）
+      // オフライン減災モードの有効化
+      setIsOfflineMitigationMode(true);
+      const shelters = getFallbackShelters(data.address || null);
       const fallbackResult = {
-        alert: "⚠️ AI推奨情報の取得に失敗しました。電波状況を確認し、一括更新ボタンをお試しください。",
-        actionGuide: "周囲の天候変化、日没時間、体感温度等に留意しながら安全第一で行動してください。",
-        spotInfo: "この先1〜3km圏内の最寄りコンビニや道の駅で、最新の地域マップや休憩所をご確認ください。"
+        alert: "⚠️ 【オフライン減災モード】通信不調のためローカル情報を提供中。落ち着いて行動してください。",
+        actionGuide: "🧭 広域避難場所へ避難、家族への安否確認、FMラジオ等の災害情報を確認してください。",
+        spotInfo: `📍 近隣の主な指定避難所リスト:\n` + shelters.map(s => `・${s}`).join("\n")
       };
       setRecommendations(fallbackResult);
       if (!isMutedRef.current) {
@@ -1173,6 +1446,19 @@ export default function App() {
 
   // 特定のパネルをタップ/クリックしたときにそのパネルだけを即時更新する関数
   const handleTileClick = async (tileId: TileId) => {
+    if (tileId === "maxLeanAngle") {
+      if (data.confirmResetLean) {
+        setMaxLean({ left: 0, right: 0 });
+        setData((prev) => ({ ...prev, confirmResetLean: false, maxLeanAngle: { left: 0, right: 0 } }));
+      } else {
+        setData((prev) => ({ ...prev, confirmResetLean: true }));
+        setTimeout(() => {
+          setData((prev) => ({ ...prev, confirmResetLean: false }));
+        }, 4000);
+      }
+      return;
+    }
+
     const nowStamp = Date.now();
     setLastUpdated((prev) => ({
       ...prev,
@@ -1464,6 +1750,22 @@ export default function App() {
       const roll = e.gamma !== null ? Math.round(e.gamma) : 0;
       latestTilt.current = { pitch, roll };
 
+      // 最大バンク角（ハングオン）の自動計測＆記録
+      const rollAbs = Math.abs(roll);
+      if (rollAbs > 0 && rollAbs <= 65) { // 典型的な最大バンク角は60°前後
+        if (roll < 0) {
+          const leftLean = Math.abs(roll);
+          if (leftLean > maxLeanRef.current.left) {
+            setMaxLean((prev) => ({ ...prev, left: leftLean }));
+          }
+        } else if (roll > 0) {
+          const rightLean = roll;
+          if (rightLean > maxLeanRef.current.right) {
+            setMaxLean((prev) => ({ ...prev, right: rightLean }));
+          }
+        }
+      }
+
       // @ts-ignore
       let heading = e.webkitCompassHeading;
       if (heading === undefined || heading === null) {
@@ -1514,6 +1816,7 @@ export default function App() {
         bearing: { angle: heading, direction: getDirectionString(heading) },
         dbLevel: latestDb.current,
         accumulatedDistance: Math.round(currentAccumulatedDistance.current),
+        maxLeanAngle: { ...maxLeanRef.current },
       }));
       setLastUpdated((prev) => ({
         ...prev,
@@ -1522,6 +1825,7 @@ export default function App() {
         dbLevel: nowStamp,
         accumulatedDistance: nowStamp,
         sunsetCountdown: nowStamp, // カウントダウンタイマーも3秒ごとに表示を更新
+        maxLeanAngle: nowStamp,
       }));
     }, 3000);
 
@@ -1550,13 +1854,6 @@ export default function App() {
       if (isPausedRef.current) return;
       updateTileData(["zipcode", "address"]);
     }, 3 * 60 * 1000);
-
-    // --- 5分毎更新 ---
-    // Gemini リアルタイム旅行推奨情報 (警告、行動指針、周辺スポット)
-    const interval5m = setInterval(() => {
-      if (isPausedRef.current) return;
-      triggerGeminiRecommendations();
-    }, 5 * 60 * 1000);
 
     // --- 10分毎更新 ---
     // 海、日の出・日没、大気汚染、満潮・干潮、黄砂 (不要なPOIは完全に削除)
@@ -1598,7 +1895,6 @@ export default function App() {
       clearInterval(interval3s);
       clearInterval(interval10s);
       clearInterval(interval3m);
-      clearInterval(interval5m);
       clearInterval(interval10m);
       clearInterval(interval15m);
       clearInterval(interval20m);
@@ -1612,6 +1908,49 @@ export default function App() {
     };
   }, [started]);
 
+  // 緊急度の自動判定 (震度や警報、緊急避難などの重要ワードを検知)
+  const isEmergency = !!(
+    (recommendations?.alert && (
+      recommendations.alert.includes("震度") || 
+      recommendations.alert.includes("津波") || 
+      recommendations.alert.includes("警報") || 
+      recommendations.alert.includes("避難") ||
+      recommendations.alert.includes("震災") ||
+      recommendations.alert.includes("緊急")
+    )) || 
+    (data.earthquake && (
+      data.earthquake.includes("震度5") || 
+      data.earthquake.includes("震度6") || 
+      data.earthquake.includes("震度7") || 
+      data.earthquake.includes("津波") || 
+      data.earthquake.includes("緊急")
+    ))
+  );
+
+  // AI情報自動更新＆カウントダウンタイマー (緊急時は1分毎更新、通常時は5分毎更新)
+  useEffect(() => {
+    if (!started) return;
+    
+    const targetLimit = isEmergency ? 60 : 300;
+    
+    // カウントダウンが制限時間を超えていれば、即座にキャップする
+    setCountdownSec((prev) => (prev > targetLimit ? targetLimit : prev));
+
+    const timer = setInterval(() => {
+      if (isPausedRef.current) return;
+      
+      setCountdownSec((prev) => {
+        if (prev <= 1) {
+          triggerGeminiRecommendations();
+          return targetLimit;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [started, isEmergency]);
+
   if (!started) {
     return <InitialOverlay onStart={handleStart} />;
   }
@@ -1623,25 +1962,39 @@ export default function App() {
     ? "bg-yellow-400 text-slate-950 border-yellow-300"
     : "bg-slate-950/85 text-white border-white/10";
 
-  // マーカー行表示用ヘルパー
+  // マーカー行表示用ヘルパー (クリックで詳細表示モーダルを起動)
   const renderMarqueeRow = (icon: string, label: string, labelColor: string, text: string) => {
     return (
-      <div className="flex items-center gap-2 bg-slate-900/60 hover:bg-slate-900/80 transition-all px-3 py-1.5 rounded-lg border border-white/5 text-[11px] h-8 overflow-hidden">
+      <div 
+        onClick={() => text && setSelectedFullText({ label, text })}
+        className="flex items-center gap-2 bg-slate-900/60 hover:bg-slate-900/80 transition-all px-3 py-1.5 rounded-lg border border-white/5 text-[11px] h-8 overflow-hidden cursor-pointer select-none group"
+        title="タップして詳細をダイアログ表示"
+      >
         <span className={`shrink-0 font-bold ${labelColor} flex items-center gap-1 min-w-[70px] text-left select-none`}>
           <span>{icon}</span>
           <span>{label}:</span>
         </span>
         <div className="marquee-container flex-1">
-          <div className="marquee-content text-slate-200 font-sans">
-            {text ? (
-              <>
-                {text} <span className="mx-8 text-slate-500 font-bold">✦</span> {text} <span className="mx-8 text-slate-500 font-bold">✦</span>
-              </>
-            ) : (
-              <span className="text-slate-400">現在地と周辺データを分析中...</span>
-            )}
-          </div>
+          {text ? (
+            <>
+              <div className="marquee-content text-slate-200 font-sans pr-10 group-hover:text-white">
+                <span>{text}</span>
+                <span className="mx-6 text-slate-500 font-bold">✦</span>
+              </div>
+              <div className="marquee-content text-slate-200 font-sans pr-10 group-hover:text-white">
+                <span>{text}</span>
+                <span className="mx-6 text-slate-500 font-bold">✦</span>
+              </div>
+            </>
+          ) : (
+            <div className="marquee-content text-slate-400">
+              <span>現在地と周辺データを分析中...</span>
+            </div>
+          )}
         </div>
+        <span className="shrink-0 text-[9px] text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity">
+          🔍
+        </span>
       </div>
     );
   };
@@ -1652,8 +2005,8 @@ export default function App() {
       <header className="w-full h-[46px] bg-black/20 border-b border-white/20 relative z-40 px-5 flex items-center justify-between shadow-lg shrink-0">
         {/* ロゴと現在地の概要 */}
         <div className="flex items-center gap-2.5">
-          <div className="w-6.5 h-6.5 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-md flex items-center justify-center shadow-md shadow-blue-500/25">
-            <Compass className="w-4 h-4 text-white animate-[spin_15s_linear_infinite]" />
+          <div className="w-6.5 h-6.5 bg-gradient-to-tr from-slate-900 to-slate-950 rounded-md flex items-center justify-center shadow-md border border-slate-800">
+            <img src="/icon.svg" className="w-5 h-5 text-white animate-[spin_25s_linear_infinite]" alt="旅のお供" referrerPolicy="no-referrer" />
           </div>
           <div className="flex items-center gap-2">
             <h1 className="text-base sm:text-lg font-black text-white tracking-wider flex items-center gap-1 whitespace-nowrap">
@@ -1662,8 +2015,25 @@ export default function App() {
           </div>
         </div>
 
-        {/* 一括更新エリア */}
-        <div className="flex items-center gap-2">
+        {/* 一括更新・並べ替えグループ選択エリア */}
+        <div className="flex items-center gap-1.5">
+          {activeCategory === "all" && (
+            <button
+              onClick={() => {
+                setIsSelectMode(!isSelectMode);
+                setSelectedTileIds([]);
+              }}
+              className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-bold transition-all select-none cursor-pointer ${
+                isSelectMode
+                  ? "bg-amber-500 text-slate-950 hover:bg-amber-400"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              }`}
+            >
+              <span>🧩</span>
+              <span>{isSelectMode ? "グループ移動中" : "複数選択移動"}</span>
+            </button>
+          )}
+
           {/* 強制一括更新ボタン */}
           <button
             onClick={triggerFullUpdate}
@@ -1685,6 +2055,7 @@ export default function App() {
           { id: "climbing", label: "登山", icon: "🏔️" },
           { id: "sea", label: "海", icon: "🌊" },
           { id: "disaster", label: "防災", icon: "🚨" },
+          { id: "custom", label: "カスタム", icon: "⭐" },
         ].map((tab) => {
           const isActive = activeCategory === tab.id;
           return (
@@ -1704,7 +2075,54 @@ export default function App() {
         })}
       </div>
 
-      {/* 住所表示パネル (スクロール時画面最上部固定、更新時は黄色く光るフラッシュ演出) */}
+      {/* グループ並べ替え操作パネル (選択モード時のみ表示) */}
+      {isSelectMode && activeCategory === "all" && (
+        <div className="w-full bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 flex flex-wrap gap-2 items-center justify-between z-20 shrink-0">
+          <div className="text-[11px] text-amber-400 font-bold">
+            選択中: <span className="font-mono text-xs">{selectedTileIds.length}</span> 個のタイル
+          </div>
+          <div className="flex gap-1">
+            <button
+              onClick={() => moveSelectedTiles("left")}
+              disabled={selectedTileIds.length === 0}
+              className="bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-black text-[10px] px-2.5 py-1 rounded cursor-pointer transition-colors"
+            >
+              ◀ 左へ移動
+            </button>
+            <button
+              onClick={() => moveSelectedTiles("right")}
+              disabled={selectedTileIds.length === 0}
+              className="bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-black text-[10px] px-2.5 py-1 rounded cursor-pointer transition-colors"
+            >
+              右へ移動 ▶
+            </button>
+            <button
+              onClick={gatherSelectedTiles}
+              disabled={selectedTileIds.length <= 1}
+              className="bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white font-black text-[10px] px-2.5 py-1 rounded cursor-pointer transition-colors"
+            >
+              一括集約
+            </button>
+            <button
+              onClick={() => setSelectedTileIds([])}
+              className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-[10px] px-2.5 py-1 rounded cursor-pointer transition-colors"
+            >
+              クリア
+            </button>
+            <button
+              onClick={() => {
+                setIsSelectMode(false);
+                setSelectedTileIds([]);
+              }}
+              className="bg-slate-700 hover:bg-slate-600 text-white font-black text-[10px] px-2.5 py-1 rounded cursor-pointer transition-colors"
+            >
+              完了
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 住所表示パネル (コンパスと方位数値を内包) */}
       <div
         ref={mainRef}
         className={`sticky top-0 z-30 w-full px-4 py-2 flex items-center justify-between gap-1.5 text-xs border-b backdrop-blur-md transition-colors duration-300 ${addressBgClass}`}
@@ -1716,30 +2134,116 @@ export default function App() {
           </span>
         </div>
 
-        {/* 滑らかに回転する小さな円形コンパス */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <motion.div
-            animate={{ rotate: deviceHeading !== null ? -deviceHeading : 0 }}
-            transition={{ type: "spring", stiffness: 80, damping: 18 }}
-            className={`w-6 h-6 rounded-full border flex items-center justify-center text-[8px] font-bold relative shrink-0 shadow-inner ${
-              isAddressFlashing 
-                ? "border-slate-800 bg-slate-100 text-slate-800" 
-                : "border-slate-800 bg-slate-950/80 text-sky-400"
-            }`}
-            title={`向いている方角: ${deviceHeading !== null ? Math.round(deviceHeading) : "---"}°`}
-          >
-            <span className="absolute top-0.5 text-[7px] text-rose-500 font-black leading-none">N</span>
-            <div className="w-[1.5px] h-2 bg-rose-500 rounded-full absolute top-1" />
-            <div className="w-[1.5px] h-2 bg-slate-600 rounded-full absolute bottom-1" />
-            <div className="w-1 h-1 rounded-full bg-slate-400 absolute" />
-          </motion.div>
-          {deviceHeading !== null && (
-            <span className={`text-[9px] font-mono font-bold ${isAddressFlashing ? "text-slate-900" : "text-slate-400"}`}>
-              {Math.round(deviceHeading)}°
+        {/* 住所欄内のコンパス＆方角数値表示 */}
+        <div className="flex items-center gap-2 shrink-0 select-none bg-slate-950/40 border border-white/5 rounded-lg px-2.5 py-1 text-slate-300">
+          <div className="relative w-3 h-3 flex items-center justify-center">
+            <div 
+              style={{ transform: `rotate(${deviceHeading !== null ? -deviceHeading : 0}deg)` }}
+              className="text-[10px] leading-none transition-transform duration-100 ease-out flex items-center justify-center font-black text-rose-500"
+            >
+              ▲
+            </div>
+          </div>
+          <span className="font-mono text-[11px] font-bold">
+            {deviceHeading !== null ? `${Math.round(deviceHeading)}°` : "---°"}
+            <span className="text-[10px] text-sky-400 font-sans ml-1">
+              {(() => {
+                if (deviceHeading === null) return "---";
+                const val = Math.floor((deviceHeading / 22.5) + 0.5);
+                const arr = ["北", "北北東", "北東", "東北東", "東", "東南東", "南東", "南南東", "南", "南南西", "南西", "西南西", "西", "西北西", "北西", "北北西"];
+                return arr[val % 16];
+              })()}
             </span>
-          )}
+          </span>
         </div>
       </div>
+
+      {/* カスタムカテゴリの設定パネル (カスタムタブ選択時のみ表示) */}
+      {activeCategory === "custom" && (
+        <div className="mx-4 my-2 p-3 bg-slate-900/80 border border-sky-500/20 rounded-2xl flex flex-col gap-2 shrink-0">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-300 font-bold flex items-center gap-1.5 select-none">
+              ⭐ カスタム表示タイルの編集
+            </span>
+            <button
+              onClick={() => setIsCustomSettingOpen(!isCustomSettingOpen)}
+              className="bg-sky-500 hover:bg-sky-400 text-slate-950 font-black text-[10px] px-2.5 py-1 rounded-md cursor-pointer transition-colors"
+            >
+              {isCustomSettingOpen ? "設定を閉じる" : "表示タイルを設定"}
+            </button>
+          </div>
+          
+          {isCustomSettingOpen && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1 bg-slate-950/50 p-2.5 rounded-xl border border-white/5 max-h-48 overflow-y-auto">
+              {ALL_TILES_CONFIG.map((tile) => {
+                const isChecked = customCategoryTileIds.includes(tile.id);
+                return (
+                  <label key={tile.id} className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer select-none hover:text-white p-1">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => {
+                        setCustomCategoryTileIds((prev) =>
+                          isChecked ? prev.filter((id) => id !== tile.id) : [...prev, tile.id]
+                        );
+                      }}
+                      className="rounded border-slate-700 text-sky-500 focus:ring-sky-500 bg-slate-900"
+                    />
+                    <span>{tile.emoji} {tile.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 今日の旅コンディション */}
+      {(() => {
+        const cond = getTravelCondition(data);
+        return (
+          <div className="mx-4 my-2 p-4 bg-slate-900/70 border border-white/10 rounded-2xl shadow-xl flex items-center justify-between gap-4 shrink-0">
+            <div className="flex-grow">
+              <div className="text-xs text-sky-400 font-extrabold tracking-wider mb-1 select-none flex items-center gap-1.5">
+                <span>✨</span> 今日の旅コンディション
+              </div>
+              <div className="flex items-center gap-1.5 my-1">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <span
+                    key={i}
+                    className={`text-base leading-none ${
+                      i < cond.stars ? "text-yellow-400" : "text-slate-600"
+                    }`}
+                  >
+                    ★
+                  </span>
+                ))}
+                <span className="text-xs text-slate-400 ml-1 font-mono font-bold">
+                  ({cond.stars}/5)
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {cond.remarks.map((remark, idx) => (
+                  <span
+                    key={idx}
+                    className="text-[10px] bg-slate-950/60 border border-slate-800 text-slate-300 font-bold px-2 py-0.5 rounded-full"
+                  >
+                    {remark}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="shrink-0 flex flex-col items-center justify-center bg-slate-950/80 border border-white/5 rounded-xl px-3 py-2 w-20 text-center shadow-inner">
+              <span className="text-[22px] font-black font-mono text-emerald-400 leading-none">
+                {cond.score}
+              </span>
+              <span className="text-[9px] text-slate-400 font-bold mt-1 leading-none">
+                100点満点
+              </span>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* メインタイグリッド */}
       <main className="flex-grow w-full px-1 py-1 flex flex-col justify-start">
@@ -1749,13 +2253,19 @@ export default function App() {
             const config = ALL_TILES_CONFIG.find((c) => c.id === tileId);
             if (!config) return null;
 
-            // カテゴリによるフィルタリング (複数カテゴリに跨がって表示可能)
-            if (activeCategory !== "all" && !config.categories.includes(activeCategory)) {
+            // カテゴリによるフィルタリング
+            if (activeCategory === "custom") {
+              if (!customCategoryTileIds.includes(tileId)) return null;
+            } else if (activeCategory !== "all" && !config.categories.includes(activeCategory)) {
               return null;
             }
 
-            // ドラッグ＆ドロップは "すべて" (all) タブでのみ有効にする（バグと混乱の防止、省電力）
-            const canDrag = activeCategory === "all";
+            // ドラッグ＆ドロップは "すべて" (all) タブかつ並べ替え選択モードでない場合のみ有効にする
+            const canDrag = activeCategory === "all" && !isSelectMode;
+            const isSelected = selectedTileIds.includes(config.id);
+            const tileClickAction = isSelectMode 
+              ? () => toggleSelectTile(config.id) 
+              : () => handleTileClick(config.id);
 
             return (
               <div
@@ -1766,14 +2276,21 @@ export default function App() {
                 onDragEnd={canDrag ? handleDragEnd : undefined}
                 className={`${canDrag ? "cursor-move active:scale-95" : "cursor-default"} select-none transition-transform`}
               >
-                <CompanionTile
-                  config={config}
-                  data={data}
-                  deviceHeading={deviceHeading}
-                  lastUpdatedTime={lastUpdated[config.id] || 0}
-                  isCached={!!cachedTiles[config.id]}
-                  onClick={() => handleTileClick(config.id)}
-                />
+                <div className={`relative rounded-2xl h-full transition-all duration-200 ${isSelected ? "ring-4 ring-amber-400 scale-[0.96] shadow-[0_0_15px_rgba(245,158,11,0.3)]" : ""}`}>
+                  {isSelectMode && (
+                    <div className="absolute top-1.5 right-1.5 z-20 w-4 h-4 bg-amber-500 border border-white rounded-full flex items-center justify-center text-[10px] text-slate-950 font-black">
+                      {isSelected ? "✓" : ""}
+                    </div>
+                  )}
+                  <CompanionTile
+                    config={config}
+                    data={data}
+                    deviceHeading={deviceHeading}
+                    lastUpdatedTime={lastUpdated[config.id] || 0}
+                    isCached={!!cachedTiles[config.id]}
+                    onClick={tileClickAction}
+                  />
+                </div>
               </div>
             );
           })}
@@ -1789,10 +2306,14 @@ export default function App() {
                 {isLoadingRecommendations ? (
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
                 ) : null}
-                <span className={`relative inline-flex rounded-full h-2 w-2 ${isLoadingRecommendations ? "bg-sky-500" : "bg-emerald-500"}`}></span>
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${isLoadingRecommendations ? "bg-sky-500" : isEmergency ? "bg-amber-500 animate-pulse" : "bg-emerald-500"}`}></span>
               </span>
-              <span className="text-[11px] font-bold text-slate-200 tracking-wide font-sans flex items-center gap-1 select-none">
-                🤖 AI リアルタイム情報 (5分更新)
+              <span className={`text-[11px] font-bold tracking-wide font-sans flex items-center gap-1 select-none ${isEmergency ? "text-amber-400 animate-pulse" : "text-slate-200"}`}>
+                {isEmergency ? (
+                  <span>🚨 AI災害緊急モード (1分更新: 残り {countdownSec}秒)</span>
+                ) : (
+                  <span>🤖 AI情報自動更新 (5分更新: あと {Math.floor(countdownSec / 60)}分{countdownSec % 60}秒)</span>
+                )}
                 {isLoadingRecommendations && <span className="text-[10px] text-slate-400 animate-pulse font-normal">(更新中...)</span>}
               </span>
             </div>
@@ -1841,23 +2362,58 @@ export default function App() {
           </div>
 
           <div className="space-y-1">
-            {renderMarqueeRow("🚨", "危険情報", "text-rose-400", recommendations?.alert || "")}
+            {/* 危険情報が無い場合（危険情報の重要キーワードが含まれていない場合）は非表示にする */}
+            {(isEmergency || (recommendations?.alert && (
+              recommendations.alert.includes("警報") ||
+              recommendations.alert.includes("注意") ||
+              recommendations.alert.includes("震度") ||
+              recommendations.alert.includes("津波") ||
+              recommendations.alert.includes("避難") ||
+              recommendations.alert.includes("オフライン減災") ||
+              recommendations.alert.includes("🚨") ||
+              recommendations.alert.includes("⚠️")
+            ))) ? (
+              renderMarqueeRow("🚨", "危険情報", "text-rose-400 font-extrabold", recommendations?.alert || "")
+            ) : null}
+            
             {renderMarqueeRow("🧭", "次の行動", "text-sky-300", recommendations?.actionGuide || "")}
             {renderMarqueeRow("📍", "お役立ち", "text-emerald-300", recommendations?.spotInfo || "")}
           </div>
 
           {/* フッターを固定ドックの下にスリムに統合して省スペース化 */}
           <div className="mt-2 text-center text-[9px] text-slate-500 select-none border-t border-white/5 pt-1.5 flex flex-wrap items-center justify-between gap-2 px-1">
-            <span>GPS&AIリアルタイムコンパニオン ver83 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン</span>
-            {(!isOnline || !currentCoords.current) && (
+            <span>@2026 旅のお供 ver84</span>
+            {(!isOnline || !currentCoords.current || isOfflineMitigationMode) && (
               <span className="flex items-center gap-1 text-rose-400 font-bold animate-pulse">
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_#f43f5e]"></span>
-                <span>オフラインモードで動作中</span>
+                <span>オフライン減災モード起動中</span>
               </span>
             )}
           </div>
         </div>
       </div>
+
+      {/* AI情報詳細表示モーダル */}
+      {selectedFullText && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
+            <h3 className="text-base font-black text-white mb-2 flex items-center gap-2 border-b border-white/5 pb-2">
+              <span>ℹ️</span> {selectedFullText.label} の詳細
+            </h3>
+            <p className="text-sm text-slate-300 leading-relaxed font-sans whitespace-pre-wrap py-2">
+              {selectedFullText.text}
+            </p>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setSelectedFullText(null)}
+                className="bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs px-4 py-2 rounded-lg cursor-pointer transition-colors"
+              >
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

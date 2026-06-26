@@ -53,11 +53,14 @@ export interface CompanionData {
 
   // 新機能: アプリ起動時からの累計移動距離 (m)
   accumulatedDistance?: number | null;
+  pressure?: number | null;
+  maxLeanAngle?: { left: number; right: number } | null;
+  confirmResetLean?: boolean;
 }
 
 export type TileId = keyof CompanionData | string;
 
-export type TileCategory = "weather" | "driving" | "climbing" | "sea" | "disaster" | "system";
+export type TileCategory = "weather" | "driving" | "climbing" | "sea" | "disaster" | "system" | "custom";
 
 export interface TileConfig {
   id: TileId;
