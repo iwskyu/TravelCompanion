@@ -6,35 +6,10 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { MapPin, Mic, Compass } from "lucide-react";
+import { fetchIpCoords } from "../utils/api";
 
 interface InitialOverlayProps {
   onStart: (coords: { lat: number; lon: number } | null, audioStream: MediaStream | null) => void;
-}
-
-async function fetchIpCoords(): Promise<{ lat: number; lon: number } | null> {
-  try {
-    const res = await fetch("https://ipapi.co/json/");
-    if (res.ok) {
-      const data = await res.json();
-      if (typeof data.latitude === "number" && typeof data.longitude === "number") {
-        return { lat: data.latitude, lon: data.longitude };
-      }
-    }
-  } catch (e) {
-    console.warn("Failed to fetch from ipapi.co", e);
-  }
-  try {
-    const res = await fetch("https://freeipapi.com/api/json");
-    if (res.ok) {
-      const data = await res.json();
-      if (typeof data.latitude === "number" && typeof data.longitude === "number") {
-        return { lat: data.latitude, lon: data.longitude };
-      }
-    }
-  } catch (e) {
-    console.warn("Failed to fetch from freeipapi.com", e);
-  }
-  return null;
 }
 
 export function InitialOverlay({ onStart }: InitialOverlayProps) {

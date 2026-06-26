@@ -777,26 +777,15 @@ export async function fetchAllCompanionData(
 
 export async function fetchIpCoords(): Promise<{ lat: number; lon: number } | null> {
   try {
-    const res = await fetch("https://ipapi.co/json/");
+    const res = await fetch("/api/ip-coords");
     if (res.ok) {
       const data = await res.json();
-      if (typeof data.latitude === "number" && typeof data.longitude === "number") {
-        return { lat: data.latitude, lon: data.longitude };
+      if (typeof data.lat === "number" && typeof data.lon === "number") {
+        return { lat: data.lat, lon: data.lon };
       }
     }
   } catch (e) {
-    console.warn("Failed to fetch from ipapi.co", e);
-  }
-  try {
-    const res = await fetch("https://freeipapi.com/api/json");
-    if (res.ok) {
-      const data = await res.json();
-      if (typeof data.latitude === "number" && typeof data.longitude === "number") {
-        return { lat: data.latitude, lon: data.longitude };
-      }
-    }
-  } catch (e) {
-    console.warn("Failed to fetch from freeipapi.com", e);
+    console.warn("Failed to fetch server-side /api/ip-coords", e);
   }
   return null;
 }

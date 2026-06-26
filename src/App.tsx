@@ -447,6 +447,11 @@ export default function App() {
   }, []);
 
   const [data, setData] = useState<CompanionData>(INITIAL_COMPANION_DATA);
+  const dataRef = useRef<CompanionData>(data);
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
+  
   const [deviceHeading, setDeviceHeading] = useState<number | null>(null);
   const [dbLevel, setDbLevel] = useState<number>(0);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -1969,9 +1974,18 @@ export default function App() {
             speed: position.coords.speed,
             elevation: position.coords.altitude,
           };
+          const wasNull = !currentCoords.current;
           const lat = position.coords.latitude;
           const lon = position.coords.longitude;
           currentCoords.current = { lat, lon };
+
+          // GPS信号を初めてキャッチしたか、住所が未取得・エラー状態の場合、即座に一括更新を実行して住所情報を取得
+          const currentAddr = dataRef.current?.address || "";
+          const isAddressMissingOrErr = !currentAddr || currentAddr === "-" || currentAddr.includes("位置情報を取得できません");
+          if (wasNull || isAddressMissingOrErr) {
+            console.log("First GPS lock or recovery detected. Triggering geocode & data refresh...");
+            triggerFullUpdate();
+          }
 
           // 累計移動距離の積算
           if (prevTrackCoords.current) {

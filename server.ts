@@ -60,6 +60,56 @@ app.get("/api/geocode", async (req, res) => {
   }
 });
 
+//// API Route for Server-side IP Geolocation to bypass mobile browser CORS & secure context constraints
+app.get("/api/ip-coords", async (req, res) => {
+  try {
+    let ip = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || "";
+    if (ip.includes(",")) {
+      ip = ip.split(",")[0].trim();
+    }
+    
+    // IPv4-mapped IPv6 addresses cleanup
+    if (ip.startsWith("::ffff:")) {
+      ip = ip.substring(7);
+    }
+
+    // Default placeholder if local loopback or private network
+    if (ip === "::1" || ip === "127.0.0.1" || ip.startsWith("192.168.") || ip.startsWith("10.") || !ip) {
+      ip = ""; // Let ipapi determine by request origin
+    }
+
+    const url = ip ? `https://ipapi.co/${ip}/json/` : `https://ipapi.co/json/`;
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "TravelCompanionApp/64.0 (iwskyu@gmail.com)",
+      }
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (typeof data.latitude === "number" && typeof data.longitude === "number") {
+        return res.json({ lat: data.latitude, lon: data.longitude });
+      }
+    }
+
+    // Fallback: freeipapi
+    const fallbackUrl = ip ? `https://freeipapi.com/api/json/${ip}` : `https://freeipapi.com/api/json`;
+    const fallbackResponse = await fetch(fallbackUrl);
+    if (fallbackResponse.ok) {
+      const data = await fallbackResponse.json();
+      if (typeof data.latitude === "number" && typeof data.longitude === "number") {
+        return res.json({ lat: data.latitude, lon: data.longitude });
+      }
+    }
+
+    // Secondary static fallback to Tokyo if all else fails
+    return res.json({ lat: 35.6812, lon: 139.7671, note: "Static fallback" });
+  } catch (err: any) {
+    console.error("Server-side IP location resolution failed:", err.message || err);
+    return res.json({ lat: 35.6812, lon: 139.7671, note: "Static fallback on error" });
+  }
+});
+
 //// API Route for Gemini Travel Recommendations
 app.post("/api/gemini/recommendations", async (req, res) => {
   try {
