@@ -114,7 +114,6 @@ ${categoryPriorityInstruction}
             systemInstruction: "あなたは爆速でお供情報を返すAIです。余計な説明や挨拶は完全に排除し、指定されたスキーマに従って日本語の1文（45〜65文字）で回答してください。実在する特定の店舗名、商品名、および価格（例：○○カフェのクッキー250円）を必ず1つ含めてください。",
             responseMimeType: "application/json",
             temperature: 0.1, // 決定論的な出力を高めて思考速度を極限まで引き上げる
-            maxOutputTokens: 250, // 通信とトークン生成コストを抑えレスポンスを最速化
             responseSchema: {
               type: Type.OBJECT,
               properties: {
@@ -149,7 +148,24 @@ ${categoryPriorityInstruction}
       throw lastError || new Error("All fallback models failed.");
     }
 
-    const text = response.text || "{}";
+    let text = response.text || "{}";
+    
+    // Clean markdown blocks if present
+    if (text.includes("```")) {
+      const match = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      if (match) {
+        text = match[1];
+      }
+    }
+    
+    // Remove any trailing/leading text outside the JSON block if any exists
+    text = text.trim();
+    const firstBrace = text.indexOf("{");
+    const lastBrace = text.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace !== -1) {
+      text = text.substring(firstBrace, lastBrace + 1);
+    }
+
     const result = JSON.parse(text);
     res.json(result);
   } catch (error: any) {
