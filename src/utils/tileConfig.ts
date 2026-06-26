@@ -254,7 +254,8 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
         const hours = Math.floor(diffMs / 3600000);
         const mins = Math.floor((diffMs % 3600000) / 60000);
         const secs = Math.floor((diffMs % 60000) / 1000);
-        return `日没まで\n${hours > 0 ? `${hours}時間` : ""}${mins}分${secs}秒`;
+        const pad = (n: number) => String(n).padStart(2, "0");
+        return `日没まで\n${pad(hours)}:${pad(mins)}:${pad(secs)}`;
       } else {
         const passedMins = Math.floor(Math.abs(diffMs) / 60000);
         if (passedMins < 60) {

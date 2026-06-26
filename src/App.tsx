@@ -1782,7 +1782,7 @@ export default function App() {
 
       {/* 🤖 Gemini リアルタイム旅行情報 (画面下部に完全に固定されたフローティング・コンパニオン・ドック) */}
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-950/95 backdrop-blur-md border-t border-white/15 px-4 pt-3 pb-2 shadow-[0_-12px_40px_rgba(0,0,0,0.7)]">
-        <div className="max-w-4xl mx-auto">
+        <div className="w-full">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <span className="relative flex h-2 w-2">
@@ -1848,7 +1848,7 @@ export default function App() {
 
           {/* フッターを固定ドックの下にスリムに統合して省スペース化 */}
           <div className="mt-2 text-center text-[9px] text-slate-500 select-none border-t border-white/5 pt-1.5 flex flex-wrap items-center justify-between gap-2 px-1">
-            <span>旅のお供 ver81 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン</span>
+            <span>GPS&AIリアルタイムコンパニオン ver83 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン</span>
             {(!isOnline || !currentCoords.current) && (
               <span className="flex items-center gap-1 text-rose-400 font-bold animate-pulse">
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_#f43f5e]"></span>

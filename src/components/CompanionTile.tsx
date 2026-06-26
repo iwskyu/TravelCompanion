@@ -127,8 +127,8 @@ export function CompanionTile({
     // 周囲の静かさの値はフォントサイズを明確に小さくする
     fontSizeClass = "text-[11px] sm:text-[12px] md:text-[13px] font-bold leading-snug";
   } else if (config.id === "earthquake") {
-    // 地震・防災情報、値をセンタリングしてフォント大きくして
-    fontSizeClass = "text-[14px] sm:text-[16px] md:text-[18px] font-bold leading-normal text-center tracking-wide px-0.5 self-center w-full overflow-y-auto max-h-[46px]";
+    // 地震・防災情報の値のフォントを小さく調整
+    fontSizeClass = "text-[11px] sm:text-[12px] md:text-[13px] font-bold leading-normal text-center tracking-wide px-0.5 self-center w-full overflow-y-auto max-h-[46px]";
   } else if (config.id === "magicHour") {
     // マジックアワーのフォントサイズを小さく調整
     fontSizeClass = "text-[11px] sm:text-[12px] md:text-[13px] font-bold leading-snug text-center";

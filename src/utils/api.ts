@@ -523,7 +523,7 @@ export function calculateMagicHour(sunriseTimeStr: string, sunsetTimeStr: string
   const eveningStart = sunsetMin - 30;
   const eveningEnd = sunsetMin + 30;
 
-  return `朝 ${formatMinutesToTime(morningStart)}-${formatMinutesToTime(morningEnd)}\n夕 ${formatMinutesToTime(eveningStart)}-${formatMinutesToTime(eveningEnd)}`;
+  return `朝 ${formatMinutesToTime(morningStart)}～${formatMinutesToTime(morningEnd)}\n夕 ${formatMinutesToTime(eveningStart)}～${formatMinutesToTime(eveningEnd)}`;
 }
 
 // 3. 地震情報API (P2Pquake)
