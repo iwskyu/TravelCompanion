@@ -86,11 +86,47 @@ export async function fetchAddressAndZip(
 
   const runFetch = async () => {
     try {
-      const url = `/api/geocode?lat=${lat}&lon=${lon}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Nominatim failed");
-      const json = await res.json();
+      let json: any = null;
+
+      // GitHub Pages などの静的ホスティング環境、またはCloud Run以外の環境では、最初から直接 OpenStreetMap Nominatim API を叩く
+      const isStaticHosting = 
+        typeof window !== "undefined" && 
+        (window.location.hostname.includes("github.io") || 
+         (!window.location.hostname.includes("run.app") && 
+          !window.location.hostname.includes("aistudio") && 
+          !window.location.hostname.includes("localhost") && 
+          !window.location.hostname.includes("127.0.0.1")));
+
+      if (!isStaticHosting) {
+        try {
+          const url = `/api/geocode?lat=${lat}&lon=${lon}`;
+          const res = await fetch(url);
+          if (res.ok) {
+            json = await res.json();
+          } else {
+            console.warn("Local /api/geocode responded with error. Falling back to direct OSM reverse geocoding...");
+          }
+        } catch (err) {
+          console.warn("Local /api/geocode fetch error, trying direct fallback...", err);
+        }
+      }
+
+      // ローカルAPIが失敗、あるいは静的ホスティング環境（GitHub Pages等）の場合は、ブラウザから直接 OSM Nominatim を叩く (CORS対応)
+      if (!json) {
+        const directUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`;
+        const res = await fetch(directUrl, {
+          headers: {
+            "Accept-Language": "ja,en-US;q=0.9,en;q=0.8"
+          }
+        });
+        if (!res.ok) throw new Error("Nominatim direct fallback failed");
+        json = await res.json();
+      }
+
       const addr = json.address;
+      if (!addr) {
+        throw new Error("No address block found in reverse geocode JSON");
+      }
       
       // 住所の組み立て
       const prefecture = addr.prefecture || addr.province || addr.state || addr.region || addr.island || addr.state_district || "";
