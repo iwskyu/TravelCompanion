@@ -25,7 +25,7 @@ function getArrow(bearing: number | null, heading: number | null): string {
 
 export const ALL_TILES_CONFIG: TileConfig[] = [
   // =========================================================================
-  // システム・日時（category: "system"）
+  // システム・日時
   // =========================================================================
   {
     id: "currentDate",
@@ -33,7 +33,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     emoji: "📅",
     borderColorClass: "border-white",
     render: (data) => data.currentDate || "-",
-    category: "system",
+    categories: ["system"],
   },
   {
     id: "currentTime",
@@ -41,11 +41,11 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     emoji: "⏰",
     borderColorClass: "border-white",
     render: (data) => data.currentTime || "-",
-    category: "system",
+    categories: ["system"],
   },
 
   // =========================================================================
-  // 交通・移動・位置（category: "transit"）
+  // 交通・移動・位置
   // =========================================================================
   {
     id: "bearing",
@@ -57,7 +57,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const arrow = getArrow(data.bearing.angle, null);
       return `${data.bearing.direction}\n${data.bearing.angle}° ${arrow}`;
     },
-    category: "transit",
+    categories: ["driving", "climbing", "sea"],
   },
   {
     id: "tilt",
@@ -69,7 +69,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const { pitch, roll } = data.tilt;
       return `前後: ${pitch}°\n左右: ${roll}°`;
     },
-    category: "transit",
+    categories: ["driving", "climbing", "sea"],
   },
   {
     id: "gpsAccuracy",
@@ -82,7 +82,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const level = acc <= 10 ? "高" : acc <= 30 ? "中" : "低";
       return `精度：${level}\n${acc}m`;
     },
-    category: "transit",
+    categories: ["driving", "climbing", "sea"],
   },
   {
     id: "speed",
@@ -94,7 +94,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const speedKmh = Math.round(data.speed * 3.6);
       return `${speedKmh}km/h`;
     },
-    category: "transit",
+    categories: ["driving"],
   },
   {
     id: "accumulatedDistance",
@@ -109,7 +109,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       }
       return `${(dist / 1000).toFixed(2)}km`;
     },
-    category: "transit",
+    categories: ["driving", "climbing"],
   },
   {
     id: "prefecturalCapital",
@@ -123,7 +123,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const formattedName = name.includes("(") ? name.replace("(", "\n(") : name;
       return `${formattedName}\n${formatDistance(distance)} ${arrow}`;
     },
-    category: "transit",
+    categories: ["driving"],
   },
   {
     id: "tokyoDistance",
@@ -135,7 +135,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const arrow = getArrow(data.tokyoBearing, heading);
       return `${formatDistance(data.tokyoDistance)} ${arrow}`;
     },
-    category: "transit",
+    categories: ["driving"],
   },
   {
     id: "fujiDistance",
@@ -147,7 +147,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const arrow = getArrow(data.fujiBearing, heading);
       return `${formatDistance(data.fujiDistance)} ${arrow}`;
     },
-    category: "transit",
+    categories: ["climbing"],
   },
   {
     id: "seaDistance",
@@ -159,22 +159,22 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const arrow = getArrow(data.seaBearing, heading);
       return `最寄り海\n${formatDistance(data.seaDistance)} ${arrow}`;
     },
-    category: "transit",
+    categories: ["sea"],
   },
 
   // =========================================================================
-  // 環境・気象・天体（category: "environment"）
+  // 環境・気象・天体
   // =========================================================================
   {
     id: "elevation",
-    label: "標高 (気圧・GPS算出)",
+    label: "標高 (気圧・GPS)",
     emoji: "🗻",
     borderColorClass: "border-purple",
     render: (data) => {
       if (data.elevation === null || data.elevation === undefined) return "-";
       return `${Math.round(data.elevation)}m`;
     },
-    category: "environment",
+    categories: ["climbing", "driving"],
   },
   {
     id: "weather",
@@ -191,7 +191,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       }
       return `${info.emoji} ${info.name}\n${Math.round(data.weather.temp)}℃${minMaxText}`;
     },
-    category: "environment",
+    categories: ["weather", "driving", "climbing", "sea"],
   },
   {
     id: "precipitation",
@@ -204,7 +204,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const amt = data.precipitation.amount !== null ? `${data.precipitation.amount}mm` : "-";
       return `${prob} / ${amt}`;
     },
-    category: "environment",
+    categories: ["weather", "driving", "climbing", "sea"],
   },
   {
     id: "rainCloudApproach",
@@ -218,7 +218,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       }
       return approach;
     },
-    category: "environment",
+    categories: ["weather", "driving", "climbing", "sea", "disaster"],
   },
   {
     id: "sunriseSunset",
@@ -231,7 +231,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const r2 = data.sunset ? `${data.sunset.time} ${getArrow(data.sunset.bearing, heading)}` : "-";
       return `出: ${r1}\n没: ${r2}`;
     },
-    category: "environment",
+    categories: ["weather", "driving", "climbing", "sea"],
   },
   {
     id: "sunsetCountdown",
@@ -263,7 +263,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
         return "夜間 (日没済)";
       }
     },
-    category: "environment",
+    categories: ["weather", "driving", "climbing", "sea"],
   },
   {
     id: "magicHour",
@@ -271,7 +271,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     emoji: "🌅",
     borderColorClass: "border-yellow",
     render: (data) => data.magicHour || "-",
-    category: "environment",
+    categories: ["weather"],
   },
   {
     id: "uvIndex",
@@ -282,7 +282,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       if (!data.uvIndex) return "-";
       return `${data.uvIndex.level}\nUV ${data.uvIndex.index.toFixed(1)}`;
     },
-    category: "environment",
+    categories: ["weather", "climbing", "sea"],
   },
   {
     id: "humidity",
@@ -293,7 +293,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       if (data.humidity === null) return "-";
       return `${data.humidity}%`;
     },
-    category: "environment",
+    categories: ["weather", "climbing"],
   },
   {
     id: "wind",
@@ -305,7 +305,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const arrow = getArrow(data.wind.bearing, heading);
       return `${data.wind.direction} ${arrow}\n${data.wind.speed}m/s`;
     },
-    category: "environment",
+    categories: ["weather", "driving", "climbing", "sea"],
   },
   {
     id: "moonAge",
@@ -316,7 +316,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       if (!data.moonAge) return "-";
       return `${data.moonAge.state}\n${data.moonAge.age.toFixed(1)}日`;
     },
-    category: "environment",
+    categories: ["weather", "sea"],
   },
   {
     id: "sunPosition",
@@ -328,7 +328,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const arrow = getArrow(data.sunPosition.bearing, heading);
       return `${data.sunPosition.cardinal}\n向き ${arrow}`;
     },
-    category: "environment",
+    categories: ["weather", "climbing"],
   },
   {
     id: "airQuality",
@@ -339,7 +339,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       if (!data.airQuality) return "-";
       return `${data.airQuality.pollenText}`;
     },
-    category: "environment",
+    categories: ["weather"],
   },
   {
     id: "pm25",
@@ -356,7 +356,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       else if (val > 15) label = "やや多い";
       return `${label} ${val} ㎍/㎥`;
     },
-    category: "environment",
+    categories: ["weather"],
   },
   {
     id: "kosa",
@@ -367,7 +367,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       if (!data.airQuality || !data.airQuality.kosaText) return "-";
       return data.airQuality.kosaText;
     },
-    category: "environment",
+    categories: ["weather"],
   },
   {
     id: "seaTemp",
@@ -378,7 +378,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       if (data.seaTemp === null) return "-";
       return `${data.seaTemp.toFixed(1)}℃`;
     },
-    category: "environment",
+    categories: ["sea"],
   },
   {
     id: "waveInfo",
@@ -390,7 +390,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const { height, period, direction } = data.waveInfo;
       return `${height.toFixed(1)}m (${direction})\n周期: ${period.toFixed(1)}秒`;
     },
-    category: "environment",
+    categories: ["sea"],
   },
   {
     id: "highLowTide",
@@ -403,7 +403,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       if (high === "-" && low === "-") return "-";
       return `満潮: ${high}\n干潮: ${low}`;
     },
-    category: "environment",
+    categories: ["sea"],
   },
   {
     id: "dbLevel",
@@ -421,11 +421,11 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       else label = "極めて騒がしい";
       return `${db} dB\n${label}`;
     },
-    category: "environment",
+    categories: ["weather"],
   },
 
   // =========================================================================
-  // 防災・社会インフラ（category: "disaster"）
+  // 防災・社会インフラ
   // =========================================================================
   {
     id: "earthquake",
@@ -433,7 +433,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     emoji: "🚨",
     borderColorClass: "border-red",
     render: (data) => data.earthquake || "異常なし（安定）",
-    category: "disaster",
+    categories: ["disaster"],
   },
   {
     id: "powerUsage",
@@ -445,7 +445,7 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
       const { company, rate, usage, capacity } = data.powerUsage;
       return `${company}\n使用率 ${rate}%\n(${Math.round(usage)}/${capacity}万kW)`;
     },
-    category: "disaster",
+    categories: ["disaster"],
   },
   {
     id: "trafficStatus",
@@ -453,6 +453,6 @@ export const ALL_TILES_CONFIG: TileConfig[] = [
     emoji: "🛣️",
     borderColorClass: "border-red",
     render: (data) => data.trafficStatus || "順調",
-    category: "disaster",
+    categories: ["driving", "disaster"],
   },
 ];

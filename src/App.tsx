@@ -83,8 +83,8 @@ export default function App() {
   const [isUpdating, setIsUpdating] = useState(false);
   const isPausedRef = useRef<boolean>(false);
   
-  // カテゴリ選択用 state ("all" = すべて, "environment" = 環境, "transit" = 交通, "disaster" = 防災)
-  const [activeCategory, setActiveCategory] = useState<"all" | "environment" | "transit" | "disaster">("all");
+  // カテゴリ選択用 state ("all" = すべて, "weather" = 天候, "driving" = 運転, "climbing" = 登山, "sea" = 海, "disaster" = 防災)
+  const [activeCategory, setActiveCategory] = useState<"all" | "weather" | "driving" | "climbing" | "sea" | "disaster">("all");
 
   // タイルごとのキャッシュ判別（フェッチ失敗等で古い/キャッシュであることを示すフラグ）
   const [cachedTiles, setCachedTiles] = useState<Record<TileId, boolean>>({});
@@ -1441,11 +1441,13 @@ export default function App() {
       </div>
 
       {/* カテゴリ選択タブ */}
-      <div className="w-full bg-slate-900/60 border-b border-white/10 px-4 py-1.5 flex gap-1 items-center overflow-x-auto scrollbar-none shrink-0 relative z-20">
+      <div className="w-full bg-slate-900/60 border-b border-white/10 px-4 py-1.5 flex gap-1.5 items-center overflow-x-auto scrollbar-none shrink-0 relative z-20">
         {[
           { id: "all", label: "すべて", icon: "🌐" },
-          { id: "environment", label: "環境", icon: "🌲" },
-          { id: "transit", label: "交通", icon: "🚗" },
+          { id: "weather", label: "天候", icon: "🌈" },
+          { id: "driving", label: "運転", icon: "🚗" },
+          { id: "climbing", label: "登山", icon: "🏔️" },
+          { id: "sea", label: "海", icon: "🌊" },
           { id: "disaster", label: "防災", icon: "🚨" },
         ].map((tab) => {
           const isActive = activeCategory === tab.id;
@@ -1474,8 +1476,8 @@ export default function App() {
             const config = ALL_TILES_CONFIG.find((c) => c.id === tileId);
             if (!config) return null;
 
-            // カテゴリによるフィルタリング
-            if (activeCategory !== "all" && config.category !== activeCategory) {
+            // カテゴリによるフィルタリング (複数カテゴリに跨がって表示可能)
+            if (activeCategory !== "all" && !config.categories.includes(activeCategory)) {
               return null;
             }
 

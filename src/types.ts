@@ -57,11 +57,13 @@ export interface CompanionData {
 
 export type TileId = keyof CompanionData | string;
 
+export type TileCategory = "weather" | "driving" | "climbing" | "sea" | "disaster" | "system";
+
 export interface TileConfig {
   id: TileId;
   label: string;
   emoji: string;
   borderColorClass: string;
   render: (data: CompanionData, deviceHeading: number | null) => string | ReactNode;
-  category: "environment" | "transit" | "disaster" | "system";
+  categories: TileCategory[];
 }

@@ -42,8 +42,8 @@ export function CompanionTile({
 
   // データの最終更新時刻が変わったら一時的に黄色にする（フラッシュ演出のフラグ制御）
   useEffect(() => {
-    // dbLevel はフラッシュさせない
-    if (config.id === "dbLevel") {
+    // dbLevel と sunsetCountdown はフラッシュさせない
+    if (config.id === "dbLevel" || config.id === "sunsetCountdown") {
       return;
     }
 
