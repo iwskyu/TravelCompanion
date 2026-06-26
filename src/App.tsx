@@ -30,7 +30,7 @@ import {
   getTideTimes,
   DESTINATIONS
 } from "./utils/geo";
-import { CompanionData, TileId } from "./types";
+import { CompanionData, TileId, TileConfig } from "./types";
 import { RefreshCw, MapPin, Mic, Compass, Play, Pause, Maximize2 } from "lucide-react";
 import { motion } from "motion/react";
 
@@ -74,6 +74,7 @@ const INITIAL_COMPANION_DATA: CompanionData = {
   powerUsage: null,
   trafficStatus: null,
   accumulatedDistance: 0,
+  pressure: null,
 };
 
 // --- 今日の旅コンディションの計算ロジック (カテゴリ別) ---
@@ -381,9 +382,58 @@ function getFallbackShelters(address: string | null): string[] {
   }
 }
 
+function TacticalCompassIcon() {
+  return (
+    <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
+      {/* 外側タクティカル回転ベゼルベアリング */}
+      <div className="absolute inset-0 rounded-full border border-slate-700 bg-slate-950 shadow-[0_0_10px_rgba(14,165,233,0.3)] animate-[spin_40s_linear_infinite] flex items-center justify-center">
+        {/* 4つのタクティカル十字インジケータ */}
+        <div className="absolute w-[1px] h-full bg-slate-800/80" />
+        <div className="absolute h-[1px] w-full bg-slate-800/80" />
+        {/* 目盛りドット・ノッチ */}
+        <div className="absolute top-0.5 w-1 h-1 rounded-full bg-rose-500" />
+        <div className="absolute bottom-0.5 w-1 h-1 rounded-full bg-slate-600" />
+        <div className="absolute left-0.5 w-1 h-1 rounded-full bg-slate-600" />
+        <div className="absolute right-0.5 w-1 h-1 rounded-full bg-slate-600" />
+      </div>
+      
+      {/* 内側計器盤 */}
+      <div className="absolute w-6.5 h-6.5 rounded-full border border-sky-500/40 bg-slate-900 flex items-center justify-center">
+        {/* 針（オレンジとシルバーのコントラストが効いたミリタリー・タクティカル針） */}
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: 15, ease: "linear" }}
+          className="relative w-full h-full flex items-center justify-center"
+        >
+          {/* 北針: 鋭いネオンオレンジの三角矢印 */}
+          <div className="absolute top-1 w-0 h-0 border-l-[3.5px] border-r-[3.5px] border-b-[9px] border-l-transparent border-r-transparent border-b-amber-500 drop-shadow-[0_0_2px_rgba(245,158,11,0.6)]" />
+          {/* 南針: シルバーの三角矢印 */}
+          <div className="absolute bottom-1 w-0 h-0 border-l-[3.5px] border-r-[3.5px] border-t-[9px] border-l-transparent border-r-transparent border-t-slate-500" />
+          {/* センターピン */}
+          <div className="w-1.5 h-1.5 rounded-full bg-slate-200 border border-slate-800 z-10 shadow-sm" />
+        </motion.div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [started, setStarted] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isAiCollapsed, setIsAiCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem("is_ai_collapsed") === "true";
+  });
+  const [isFullTileMode, setIsFullTileMode] = useState<boolean>(() => {
+    return localStorage.getItem("is_full_tile_mode") === "true";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("is_ai_collapsed", String(isAiCollapsed));
+  }, [isAiCollapsed]);
+
+  useEffect(() => {
+    localStorage.setItem("is_full_tile_mode", String(isFullTileMode));
+  }, [isFullTileMode]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -866,6 +916,7 @@ export default function App() {
             sunset: finalSunset,
             elevation: finalElevation !== null ? finalElevation : prev.elevation,
             magicHour: magicHourVal,
+            pressure: res.pressure,
           }));
           setLastUpdated((prev) => {
             const next = { ...prev };
@@ -1408,6 +1459,7 @@ export default function App() {
         mergedData.humidity = res.humidity;
         mergedData.elevation = finalElevation !== null ? finalElevation : mergedData.elevation;
         mergedData.magicHour = magicHourVal;
+        mergedData.pressure = res.pressure;
 
         setData((prev) => ({
           ...prev,
@@ -1421,6 +1473,7 @@ export default function App() {
           humidity: res.humidity,
           elevation: finalElevation !== null ? finalElevation : prev.elevation,
           magicHour: magicHourVal,
+          pressure: res.pressure,
         }));
         
         const activeTileIds = [...weatherTileIds];
@@ -1730,6 +1783,7 @@ export default function App() {
           humidity: res.humidity,
           elevation: finalElevation !== null ? finalElevation : prev.elevation,
           magicHour: magicHourVal,
+          pressure: res.pressure,
         }));
         const updatedStamp = Date.now();
         setLastUpdated((prev) => {
@@ -2202,15 +2256,63 @@ export default function App() {
     );
   };
 
+  const virtualTiles: TileConfig[] = [
+    {
+      id: "travelCondition",
+      label: "旅コンディション",
+      emoji: "🌟",
+      borderColorClass: "border-sky-400",
+      render: (d: CompanionData) => {
+        const cond = getCategoryCondition(d, activeCategory);
+        return `${cond.score}点 (${cond.title})\n★ ${cond.stars}/5\n${cond.remarks.slice(0, 2).join(" / ")}`;
+      },
+      categories: ["weather", "driving", "climbing", "sea", "disaster", "system", "custom"],
+    },
+    {
+      id: "aiAlert",
+      label: "AI危険情報",
+      emoji: "🚨",
+      borderColorClass: "border-rose-500",
+      render: () => recommendations?.alert || "現在、危険情報はありません",
+      categories: ["weather", "driving", "climbing", "sea", "disaster", "system", "custom"],
+    },
+    {
+      id: "aiAction",
+      label: "AI次の行動指針",
+      emoji: "🧭",
+      borderColorClass: "border-amber-400",
+      render: () => recommendations?.actionGuide || "現在地を分析中...",
+      categories: ["weather", "driving", "climbing", "sea", "disaster", "system", "custom"],
+    },
+    {
+      id: "aiSpot",
+      label: "AI周辺お役立ち",
+      emoji: "📍",
+      borderColorClass: "border-emerald-400",
+      render: () => recommendations?.spotInfo || "情報を取得中...",
+      categories: ["weather", "driving", "climbing", "sea", "disaster", "system", "custom"],
+    },
+  ];
+
+  const combinedConfigs = [...ALL_TILES_CONFIG, ...virtualTiles];
+
+  const displayedTileOrder = isFullTileMode
+    ? [
+        "travelCondition",
+        "aiAlert",
+        "aiAction",
+        "aiSpot",
+        ...tileOrder.filter((id) => !["travelCondition", "aiAlert", "aiAction", "aiSpot"].includes(id)),
+      ]
+    : tileOrder;
+
   return (
     <div className="min-h-screen animate-travel-bg text-white font-sans flex flex-col overflow-x-hidden pb-44 sm:pb-[180px]">
       {/* ヘッダーエリア */}
       <header className="w-full h-[46px] bg-black/20 border-b border-white/20 relative z-40 px-5 flex items-center justify-between shadow-lg shrink-0">
         {/* ロゴと現在地の概要 */}
         <div className="flex items-center gap-2.5">
-          <div className="w-6.5 h-6.5 bg-gradient-to-tr from-slate-900 to-slate-950 rounded-md flex items-center justify-center shadow-md border border-slate-800">
-            <Compass className="w-4 h-4 text-sky-400 animate-[spin_25s_linear_infinite]" />
-          </div>
+          <TacticalCompassIcon />
           <div className="flex items-center gap-2">
             <h1 className="text-base sm:text-lg font-black text-white tracking-wider flex items-center gap-1 whitespace-nowrap">
               旅のお供
@@ -2220,6 +2322,20 @@ export default function App() {
 
         {/* 一括更新・並べ替えグループ選択エリア */}
         <div className="flex items-center gap-1.5">
+          {/* フルタイルモード切替ボタン */}
+          <button
+            onClick={() => setIsFullTileMode(!isFullTileMode)}
+            className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-bold transition-all border select-none cursor-pointer ${
+              isFullTileMode
+                ? "bg-sky-500/20 text-sky-300 border-sky-400/40 shadow-[0_0_8px_rgba(56,189,248,0.2)]"
+                : "bg-slate-800 text-slate-400 border-transparent hover:bg-slate-700 hover:text-slate-200"
+            }`}
+            title="フルタイルモード (住所とタイルのみ)"
+          >
+            <span>📱</span>
+            <span>{isFullTileMode ? "フルタイル: ON" : "フルタイル: OFF"}</span>
+          </button>
+
           {activeCategory === "all" && (
             <button
               onClick={() => {
@@ -2380,6 +2496,7 @@ export default function App() {
 
       {/* 今日の旅コンディション (カテゴリ別のコンディション、カスタム時は非表示、タップで折りたたみ可能) */}
       {(() => {
+        if (isFullTileMode) return null;
         if (activeCategory === "custom") return null;
         const cond = getCategoryCondition(data, activeCategory);
         
@@ -2472,8 +2589,8 @@ export default function App() {
       <main className="flex-grow w-full px-1 py-1 flex flex-col justify-start">
         {/* スマートフォンの画面サイズに応じて3列または4列に切り替わるようにレスポンシブなグリッド設定に変更 */}
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-1 w-full">
-          {tileOrder.map((tileId, idx) => {
-            const config = ALL_TILES_CONFIG.find((c) => c.id === tileId);
+          {displayedTileOrder.map((tileId, idx) => {
+            const config = combinedConfigs.find((c) => c.id === tileId);
             if (!config) return null;
 
             // カテゴリによるフィルタリング
@@ -2484,7 +2601,8 @@ export default function App() {
             }
 
             // ドラッグ＆ドロップは "すべて" (all) タブかつ並べ替え選択モードでない場合のみ有効にする
-            const canDrag = activeCategory === "all" && !isSelectMode;
+            const isVirtual = ["travelCondition", "aiAlert", "aiAction", "aiSpot"].includes(tileId);
+            const canDrag = activeCategory === "all" && !isSelectMode && !isFullTileMode && !isVirtual;
             const isSelected = selectedTileIds.includes(config.id);
             const tileClickAction = isSelectMode 
               ? () => toggleSelectTile(config.id) 
@@ -2520,101 +2638,123 @@ export default function App() {
         </div>
       </main>
 
+      {/* フルタイルモード用のすっきりとしたインラインフッター */}
+      {isFullTileMode && (
+        <footer className="w-full mt-6 mb-12 text-center text-[10px] text-slate-500 select-none px-4 flex flex-col items-center gap-2 shrink-0">
+          <div className="flex items-center gap-4">
+            <span>@2026 旅のお供 ver84 (フルタイルモード)</span>
+            <span>🤖 自動更新: あと {Math.floor(countdownSec / 60)}:{String(countdownSec % 60).padStart(2, "0")}</span>
+          </div>
+          {(!isOnline || !currentCoords.current || isOfflineMitigationMode) && (
+            <span className="flex items-center gap-1 text-rose-400 font-bold animate-pulse">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_#f43f5e]"></span>
+              <span>オフライン減災モード起動中</span>
+            </span>
+          )}
+        </footer>
+      )}
+
       {/* 🤖 Gemini リアルタイム旅行情報 (画面下部に完全に固定されたフローティング・コンパニオン・ドック) */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-950/95 backdrop-blur-md border-t border-white/15 px-4 pt-3 pb-2 shadow-[0_-12px_40px_rgba(0,0,0,0.7)]">
-        <div className="w-full">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-2 w-2">
-                {isLoadingRecommendations ? (
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+      {!isFullTileMode && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-950/95 backdrop-blur-md border-t border-white/15 px-4 pt-3 pb-2 shadow-[0_-12px_40px_rgba(0,0,0,0.7)]">
+          <div className="w-full">
+            {/* 折りたたみ可能なヘッダーエリア */}
+            <div 
+              onClick={() => setIsAiCollapsed(!isAiCollapsed)}
+              className="flex items-center justify-between mb-2 cursor-pointer hover:bg-white/5 p-1 rounded-lg transition-colors select-none"
+              title={isAiCollapsed ? "タップしてAI情報を開きます" : "タップしてAI情報を畳みます"}
+            >
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-2 w-2">
+                  {isLoadingRecommendations ? (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                  ) : null}
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${isLoadingRecommendations ? "bg-sky-500" : isEmergency ? "bg-amber-500 animate-pulse" : "bg-emerald-500"}`}></span>
+                </span>
+                <span className={`text-[11px] font-bold tracking-wide font-sans flex items-center gap-1 select-none ${isEmergency ? "text-amber-400 animate-pulse" : "text-slate-200"}`}>
+                  {isEmergency ? (
+                    <span>🚨 AI災害緊急モード (1分更新: 残り {countdownSec}秒)</span>
+                  ) : (
+                    <span>🤖 AI情報自動更新 (5分更新: あと {Math.floor(countdownSec / 60)}:{String(countdownSec % 60).padStart(2, "0")})</span>
+                  )}
+                  {isLoadingRecommendations && <span className="text-[10px] text-slate-400 animate-pulse font-normal">(更新中...)</span>}
+                </span>
+              </div>
+              
+              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                {/* 音声読み上げトグル */}
+                <button
+                  onClick={handleVoiceToggle}
+                  disabled={!recommendations || isLoadingRecommendations}
+                  className={`flex items-center gap-1.5 px-3 py-1 text-[10px] disabled:opacity-40 disabled:cursor-not-allowed transition-all font-bold rounded border shadow-sm cursor-pointer select-none ${
+                    isSpeaking
+                      ? "bg-amber-950/40 hover:bg-amber-900/40 border-amber-500/20 text-amber-300 animate-pulse"
+                      : isMuted
+                      ? "bg-rose-950/40 hover:bg-rose-900/40 border-rose-500/20 text-rose-300"
+                      : "bg-emerald-950/40 hover:bg-emerald-900/40 border-emerald-500/20 text-emerald-300"
+                  }`}
+                  title={
+                    isSpeaking 
+                      ? "読み上げを即時停止" 
+                      : isMuted 
+                      ? "音声案内をオンにする (即時読み上げ)" 
+                      : "音声案内をオフにする (ミュート)"
+                  }
+                >
+                  {isSpeaking ? (
+                    <>⏹ 停止</>
+                  ) : isMuted ? (
+                    <>🔇 音声: オフ</>
+                  ) : (
+                    <>🔊 音声: オン</>
+                  )}
+                </button>
+
+                {/* 展開・折りたたみインジケーター */}
+                <span 
+                  onClick={() => setIsAiCollapsed(!isAiCollapsed)}
+                  className="text-slate-400 text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 select-none cursor-pointer hover:text-white hover:border-slate-700"
+                >
+                  {isAiCollapsed ? "展開 ＋" : "畳む −"}
+                </span>
+              </div>
+            </div>
+
+            {/* 畳まれていない場合のみ詳細表示を表示 */}
+            {!isAiCollapsed && (
+              <div className="space-y-1">
+                {/* 危険情報が無い場合（危険情報の重要キーワードが含まれていない場合）は非表示にする */}
+                {(isEmergency || (recommendations?.alert && (
+                  recommendations.alert.includes("警報") ||
+                  recommendations.alert.includes("注意") ||
+                  recommendations.alert.includes("震度") ||
+                  recommendations.alert.includes("津波") ||
+                  recommendations.alert.includes("避難") ||
+                  recommendations.alert.includes("オフライン減災") ||
+                  recommendations.alert.includes("🚨") ||
+                  recommendations.alert.includes("⚠️")
+                ))) ? (
+                  renderMarqueeRow("🚨", "危険情報", "text-rose-400 font-extrabold", recommendations?.alert || "")
                 ) : null}
-                <span className={`relative inline-flex rounded-full h-2 w-2 ${isLoadingRecommendations ? "bg-sky-500" : isEmergency ? "bg-amber-500 animate-pulse" : "bg-emerald-500"}`}></span>
-              </span>
-              <span className={`text-[11px] font-bold tracking-wide font-sans flex items-center gap-1 select-none ${isEmergency ? "text-amber-400 animate-pulse" : "text-slate-200"}`}>
-                {isEmergency ? (
-                  <span>🚨 AI災害緊急モード (1分更新: 残り {countdownSec}秒)</span>
-                ) : (
-                  <span>🤖 AI情報自動更新 (5分更新: あと {Math.floor(countdownSec / 60)}分{countdownSec % 60}秒)</span>
-                )}
-                {isLoadingRecommendations && <span className="text-[10px] text-slate-400 animate-pulse font-normal">(更新中...)</span>}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={handleVoiceToggle}
-                disabled={!recommendations || isLoadingRecommendations}
-                className={`flex items-center gap-1.5 px-3 py-1 text-[10px] disabled:opacity-40 disabled:cursor-not-allowed transition-all font-bold rounded border shadow-sm cursor-pointer select-none ${
-                  isSpeaking
-                    ? "bg-amber-950/40 hover:bg-amber-900/40 border-amber-500/20 text-amber-300 animate-pulse"
-                    : isMuted
-                    ? "bg-rose-950/40 hover:bg-rose-900/40 border-rose-500/20 text-rose-300"
-                    : "bg-emerald-950/40 hover:bg-emerald-900/40 border-emerald-500/20 text-emerald-300"
-                }`}
-                title={
-                  isSpeaking 
-                    ? "読み上げを即時停止" 
-                    : isMuted 
-                    ? "音声案内をオンにする (即時読み上げ)" 
-                    : "音声案内をオフにする (ミュート)"
-                }
-              >
-                {isSpeaking ? (
-                  <>
-                    <span className="relative flex h-1.5 w-1.5 shrink-0">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
-                    </span>
-                    <span>⏹ 停止する</span>
-                  </>
-                ) : isMuted ? (
-                  <>
-                    <span>🔇 音声案内: オフ</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="relative flex h-1.5 w-1.5 shrink-0">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-                    </span>
-                    <span>🔊 音声案内: オン (自動)</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            {/* 危険情報が無い場合（危険情報の重要キーワードが含まれていない場合）は非表示にする */}
-            {(isEmergency || (recommendations?.alert && (
-              recommendations.alert.includes("警報") ||
-              recommendations.alert.includes("注意") ||
-              recommendations.alert.includes("震度") ||
-              recommendations.alert.includes("津波") ||
-              recommendations.alert.includes("避難") ||
-              recommendations.alert.includes("オフライン減災") ||
-              recommendations.alert.includes("🚨") ||
-              recommendations.alert.includes("⚠️")
-            ))) ? (
-              renderMarqueeRow("🚨", "危険情報", "text-rose-400 font-extrabold", recommendations?.alert || "")
-            ) : null}
-            
-            {renderMarqueeRow("🧭", "次の行動", "text-sky-300", recommendations?.actionGuide || "")}
-            {renderMarqueeRow("📍", "お役立ち", "text-emerald-300", recommendations?.spotInfo || "")}
-          </div>
-
-          {/* フッターを固定ドックの下にスリムに統合して省スペース化 */}
-          <div className="mt-2 text-center text-[9px] text-slate-500 select-none border-t border-white/5 pt-1.5 flex flex-wrap items-center justify-between gap-2 px-1">
-            <span>@2026 旅のお供 ver84</span>
-            {(!isOnline || !currentCoords.current || isOfflineMitigationMode) && (
-              <span className="flex items-center gap-1 text-rose-400 font-bold animate-pulse">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_#f43f5e]"></span>
-                <span>オフライン減災モード起動中</span>
-              </span>
+                
+                {renderMarqueeRow("🧭", "次の行動", "text-sky-300", recommendations?.actionGuide || "")}
+                {renderMarqueeRow("📍", "お役立ち", "text-emerald-300", recommendations?.spotInfo || "")}
+              </div>
             )}
+
+            {/* フッターを固定ドックの下にスリムに統合して省スペース化 */}
+            <div className="mt-2 text-center text-[9px] text-slate-500 select-none border-t border-white/5 pt-1.5 flex flex-wrap items-center justify-between gap-2 px-1">
+              <span>@2026 旅のお供 ver84</span>
+              {(!isOnline || !currentCoords.current || isOfflineMitigationMode) && (
+                <span className="flex items-center gap-1 text-rose-400 font-bold animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_#f43f5e]"></span>
+                  <span>オフライン減災モード起動中</span>
+                </span>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* AI情報詳細表示モーダル */}
       {selectedFullText && (
