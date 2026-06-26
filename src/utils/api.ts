@@ -10,7 +10,7 @@ import { calculateDistance, calculateBearing, getCardinalDirection, findNearestC
 interface CacheStore {
   addressZip: { lat: number; lon: number; timestamp: number; data: { address: string; zipcode: string } } | null;
   meteo: { lat: number; lon: number; timestamp: number; data: any } | null;
-  airQuality: { lat: number; lon: number; timestamp: number; data: { pollenText: string; pm25: number | null } } | null;
+  airQuality: { lat: number; lon: number; timestamp: number; data: { pollenText: string; pm25: number | null; kosaText: string } } | null;
   seaTemp: { lat: number; lon: number; timestamp: number; data: { seaTemp: number | null; waveInfo: { height: number; period: number; direction: string } | null } } | null;
   poiData: { lat: number; lon: number; timestamp: number; data: any } | null;
 }
@@ -27,7 +27,7 @@ const cache: CacheStore = {
 const pendingPromises: {
   addressZip?: Promise<{ address: string; zipcode: string }>;
   meteo?: Promise<any>;
-  airQuality?: Promise<{ pollenText: string; pm25: number | null }>;
+  airQuality?: Promise<{ pollenText: string; pm25: number | null; kosaText: string }>;
   seaTemp?: Promise<{ seaTemp: number | null; waveInfo: { height: number; period: number; direction: string } | null }>;
   poiData?: Promise<any>;
 } = {};

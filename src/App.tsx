@@ -69,7 +69,6 @@ const INITIAL_COMPANION_DATA: CompanionData = {
   waveInfo: null,
   magicHour: null,
   earthquake: null,
-  magneticDeclination: null,
   powerUsage: null,
   trafficStatus: null,
   accumulatedDistance: 0,
@@ -1427,19 +1426,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* 住所表示パネル (スクロール時画面最上部固定、更新時は黄色く光るフラッシュ演出) */}
-      <div
-        ref={mainRef}
-        className={`sticky top-0 z-30 w-full px-4 py-2 flex items-center justify-between gap-1.5 text-xs border-b backdrop-blur-md transition-colors duration-300 ${addressBgClass}`}
-      >
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className={isAddressFlashing ? "text-slate-950" : "text-sky-400"}>📍</span>
-          <span className={`truncate font-bold tracking-wide text-sm ${isAddressFlashing ? "text-slate-950" : "text-slate-200"}`}>
-            {data.zipcode ? `〒${data.zipcode} ` : ""}{data.address || "現在地を取得中..."}
-          </span>
-        </div>
-      </div>
-
       {/* カテゴリ選択タブ */}
       <div className="w-full bg-slate-900/60 border-b border-white/10 px-4 py-1.5 flex gap-1.5 items-center overflow-x-auto scrollbar-none shrink-0 relative z-20">
         {[
@@ -1466,6 +1452,19 @@ export default function App() {
             </button>
           );
         })}
+      </div>
+
+      {/* 住所表示パネル (スクロール時画面最上部固定、更新時は黄色く光るフラッシュ演出) */}
+      <div
+        ref={mainRef}
+        className={`sticky top-0 z-30 w-full px-4 py-2 flex items-center justify-between gap-1.5 text-xs border-b backdrop-blur-md transition-colors duration-300 ${addressBgClass}`}
+      >
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className={isAddressFlashing ? "text-slate-950" : "text-sky-400"}>📍</span>
+          <span className={`truncate font-bold tracking-wide text-sm ${isAddressFlashing ? "text-slate-950" : "text-slate-200"}`}>
+            {data.zipcode ? `〒${data.zipcode} ` : ""}{data.address || "現在地を取得中..."}
+          </span>
+        </div>
       </div>
 
       {/* メインタイグリッド */}
@@ -1509,7 +1508,7 @@ export default function App() {
 
       {/* フッター */}
       <footer className="w-full bg-black/40 border-t border-white/5 py-3 text-center text-[10px] text-slate-500 select-none">
-        旅のお供 Version80 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
+        旅のお供 ver81 © 2026 ・ GPS & マイク連動リアルタイムコンパニオン
       </footer>
     </div>
   );
