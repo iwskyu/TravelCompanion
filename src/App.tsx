@@ -95,6 +95,8 @@ export default function App() {
   const [dbLevel, setDbLevel] = useState<number>(0);
   const [isUpdating, setIsUpdating] = useState(false);
   const isPausedRef = useRef<boolean>(false);
+  const lastGeminiTimeRef = useRef<number>(0);
+  const categoryDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   // Gemini リアルタイム旅行推奨情報 (5分毎更新, 3項目：警告、行動指針、周辺スポット)
   const [recommendations, setRecommendations] = useState<{
@@ -110,11 +112,21 @@ export default function App() {
   // カテゴリ選択用 state ("all" = すべて, "weather" = 天候, "driving" = 運転, "climbing" = 登山, "sea" = 海, "disaster" = 防災)
   const [activeCategory, setActiveCategory] = useState<"all" | "weather" | "driving" | "climbing" | "sea" | "disaster">("all");
 
-  // カテゴリタブが切り替わったときにAI情報を即座に優先更新する
+  // カテゴリタブが切り替わったときにAI情報を即座に優先更新する（デバウンスを挟んで連打を防止）
   useEffect(() => {
     if (started) {
-      triggerGeminiRecommendations(data, activeCategory);
+      if (categoryDebounceRef.current) {
+        clearTimeout(categoryDebounceRef.current);
+      }
+      categoryDebounceRef.current = setTimeout(() => {
+        triggerGeminiRecommendations(data, activeCategory);
+      }, 800);
     }
+    return () => {
+      if (categoryDebounceRef.current) {
+        clearTimeout(categoryDebounceRef.current);
+      }
+    };
   }, [activeCategory, started]);
 
   // タイルごとのキャッシュ判別（フェッチ失敗等で古い/キャッシュであることを示すフラグ）
@@ -633,6 +645,19 @@ export default function App() {
 
   // Gemini推奨情報を取得する
   const triggerGeminiRecommendations = async (currentData?: CompanionData, categoryOverride?: string) => {
+    // すでにロード中であれば重複してリクエストしない
+    if (isLoadingRecommendations) {
+      console.log("Gemini API is already loading. Skip duplicate request.");
+      return;
+    }
+
+    // 連続リクエスト防止：前回の成功から30秒以内はスキップ（ローカル制限）
+    const nowStamp = Date.now();
+    if (nowStamp - lastGeminiTimeRef.current < 30000) {
+      console.log("Gemini API request rate limited locally to protect API keys. Skip request.");
+      return;
+    }
+
     if (!currentCoords.current) {
       console.warn("GPS現在地が未取得のため、デフォルト座標（東京駅）を仮設定してGemini推奨情報を取得します。");
       currentCoords.current = { lat: 35.6812, lon: 139.7671 };
@@ -657,6 +682,10 @@ export default function App() {
       }
       const result = await response.json();
       setRecommendations(result);
+      
+      // 成功時、タイムスタンプを更新
+      lastGeminiTimeRef.current = Date.now();
+
       // 自動読み上げ（ミュートでない場合）
       if (result && !isMutedRef.current) {
         speakRecommendations(result);
