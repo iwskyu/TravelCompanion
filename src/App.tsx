@@ -18,7 +18,8 @@ import {
   fetchEarthquakeInfo,
   calculateMagneticDeclination,
   calculatePowerUsage,
-  calculateTrafficStatus
+  calculateTrafficStatus,
+  fetchIpCoords
 } from "./utils/api";
 import {
   calculateDistance,
@@ -1089,8 +1090,25 @@ export default function App() {
     }
 
     if (!currentCoords.current) {
-      console.warn("GPS現在地が未取得のため、デフォルト座標（東京駅）を仮設定してGemini推奨情報を取得します。");
-      currentCoords.current = { lat: 35.6812, lon: 139.7671 };
+      console.warn("GPS現在地が未取得のため、IPアドレスによる位置特定を試みます。");
+      try {
+        const ipCoords = await fetchIpCoords();
+        if (ipCoords) {
+          currentCoords.current = ipCoords;
+        }
+      } catch (e) {
+        console.error("IP fallback failed inside triggerGeminiRecommendations", e);
+      }
+    }
+
+    if (!currentCoords.current) {
+      console.warn("位置情報が全く取得できないため、AI推奨情報の取得をスキップします。");
+      setRecommendations({
+        alert: "🧭 【位置情報シグナルなし】現在地の取得を待っています...",
+        actionGuide: "スマートフォンのGPS（位置情報）が有効になっているか、または通信環境を確認してください。",
+        spotInfo: "位置情報が取得されると、あなたの居場所に完全に連動したAIコンパニオンが起動します。"
+      });
+      return;
     }
     setIsLoadingRecommendations(true);
     try {
@@ -1161,19 +1179,31 @@ export default function App() {
     }
 
     if (!currentCoords.current) {
-      console.warn("GPS現在地が取得できません。位置情報の許可、または電波状況を確認してください。");
+      console.warn("GPS failed or timed out, trying IP-based fallback...");
+      try {
+        const ipCoords = await fetchIpCoords();
+        if (ipCoords) {
+          currentCoords.current = ipCoords;
+        }
+      } catch (e) {
+        console.error("IP-based fallback also failed", e);
+      }
+    }
+
+    if (!currentCoords.current) {
+      console.warn("GPS現在地およびIP位置情報が取得できません。位置情報の許可、または電波状況を確認してください。");
       setData((prev) => ({
         ...prev,
-        address: "GPS信号を受信できません。位置情報の利用を許可し、一括更新してください。",
+        address: "位置情報を取得できません。GPSまたはネットワーク接続を確認してください。",
         zipcode: null,
       }));
       setIsUpdating(false);
       
       // GPS未取得の時の親切な案内をGeminiおすすめ欄に直接セット
       setRecommendations({
-        alert: "🧭 【GPSシグナルなし】現在地の取得を待っています...",
+        alert: "🧭 【位置情報シグナルなし】現在地の取得を待っています...",
         actionGuide: "スマートフォンのGPS（位置情報）が有効になっているか確認してください。",
-        spotInfo: "GPSが取得されると、あなたの居場所に完全に連動したAIコンパニオンが起動します。"
+        spotInfo: "位置情報が取得されると、あなたの居場所に完全に連動したAIコンパニオンが起動します。"
       });
       return;
     }

@@ -11,6 +11,32 @@ interface InitialOverlayProps {
   onStart: (coords: { lat: number; lon: number } | null, audioStream: MediaStream | null) => void;
 }
 
+async function fetchIpCoords(): Promise<{ lat: number; lon: number } | null> {
+  try {
+    const res = await fetch("https://ipapi.co/json/");
+    if (res.ok) {
+      const data = await res.json();
+      if (typeof data.latitude === "number" && typeof data.longitude === "number") {
+        return { lat: data.latitude, lon: data.longitude };
+      }
+    }
+  } catch (e) {
+    console.warn("Failed to fetch from ipapi.co", e);
+  }
+  try {
+    const res = await fetch("https://freeipapi.com/api/json");
+    if (res.ok) {
+      const data = await res.json();
+      if (typeof data.latitude === "number" && typeof data.longitude === "number") {
+        return { lat: data.latitude, lon: data.longitude };
+      }
+    }
+  } catch (e) {
+    console.warn("Failed to fetch from freeipapi.com", e);
+  }
+  return null;
+}
+
 export function InitialOverlay({ onStart }: InitialOverlayProps) {
   const [loading, setLoading] = useState(false);
 
@@ -54,8 +80,8 @@ export function InitialOverlay({ onStart }: InitialOverlayProps) {
         lon: position.coords.longitude,
       };
     } catch (err) {
-      console.warn("Geolocation denied or timed out", err);
-      coords = null;
+      console.warn("Geolocation denied or timed out, trying IP-based fallback...", err);
+      coords = await fetchIpCoords();
     }
 
     // 即座にオーバーレイを消してメイン画面に遷移
