@@ -188,8 +188,8 @@ ${categoryPriorityInstruction}
 - 余計な枕詞、挨拶、まとめ文は一切含めないでください。
 `;
 
-    // 爆速モデルや安定した標準モデル（gemini-3.5-flash, gemini-3.1-flash-lite）を最優先で使用
-    const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-3.1-pro-preview"];
+    // 爆速モデルや安定した標準モデルを優先で使用（無料枠のクォータ上限エラー回避のため、3.1-flash-liteを最優先）
+    const modelsToTry = ["gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-flash-latest"];
     let response = null;
     let lastError = null;
 

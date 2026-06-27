@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { ALL_TILES_CONFIG } from "./utils/tileConfig";
 import { CompanionTile } from "./components/CompanionTile";
 import { InitialOverlay } from "./components/InitialOverlay";
+import { TacticalCompassIcon } from "./components/TacticalCompassIcon";
 import {
   fetchAddressAndZip,
   fetchWeatherAndMeteorology,
@@ -382,41 +383,8 @@ function getFallbackShelters(address: string | null): string[] {
   }
 }
 
-function TacticalCompassIcon() {
-  return (
-    <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
-      {/* 外側タクティカル回転ベゼルベアリング */}
-      <div className="absolute inset-0 rounded-full border border-slate-700 bg-slate-950 shadow-[0_0_10px_rgba(14,165,233,0.3)] animate-[spin_40s_linear_infinite] flex items-center justify-center">
-        {/* 4つのタクティカル十字インジケータ */}
-        <div className="absolute w-[1px] h-full bg-slate-800/80" />
-        <div className="absolute h-[1px] w-full bg-slate-800/80" />
-        {/* 目盛りドット・ノッチ */}
-        <div className="absolute top-0.5 w-1 h-1 rounded-full bg-rose-500" />
-        <div className="absolute bottom-0.5 w-1 h-1 rounded-full bg-slate-600" />
-        <div className="absolute left-0.5 w-1 h-1 rounded-full bg-slate-600" />
-        <div className="absolute right-0.5 w-1 h-1 rounded-full bg-slate-600" />
-      </div>
-      
-      {/* 内側計器盤 */}
-      <div className="absolute w-6.5 h-6.5 rounded-full border border-sky-500/40 bg-slate-900 flex items-center justify-center">
-        {/* 針（オレンジとシルバーのコントラストが効いたミリタリー・タクティカル針） */}
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ repeat: Infinity, duration: 15, ease: "linear" }}
-          className="relative w-full h-full flex items-center justify-center"
-        >
-          {/* 北針: 鋭いネオンオレンジの三角矢印 */}
-          <div className="absolute top-1 w-0 h-0 border-l-[3.5px] border-r-[3.5px] border-b-[9px] border-l-transparent border-r-transparent border-b-amber-500 drop-shadow-[0_0_2px_rgba(245,158,11,0.6)]" />
-          {/* 南針: シルバーの三角矢印 */}
-          <div className="absolute bottom-1 w-0 h-0 border-l-[3.5px] border-r-[3.5px] border-t-[9px] border-l-transparent border-r-transparent border-t-slate-500" />
-          {/* センターピン */}
-          <div className="w-1.5 h-1.5 rounded-full bg-slate-200 border border-slate-800 z-10 shadow-sm" />
-        </motion.div>
-      </div>
-    </div>
-  );
-}
 
+// App Main Component
 export default function App() {
   const [started, setStarted] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -457,6 +425,9 @@ export default function App() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [isConditionCollapsed, setIsConditionCollapsed] = useState<boolean>(false);
   const isPausedRef = useRef<boolean>(false);
+  const isUpdatingRef = useRef<boolean>(false);
+  const isLoadingRecommendationsRef = useRef<boolean>(false);
+  const isFirstStartedRef = useRef<boolean>(true);
   const lastGeminiTimeRef = useRef<number>(0);
   const categoryDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -601,6 +572,10 @@ export default function App() {
   // カテゴリタブが切り替わったときにAI情報を即座に優先更新する（デバウンスを挟んで連打を防止）
   useEffect(() => {
     if (started) {
+      if (isFirstStartedRef.current) {
+        isFirstStartedRef.current = false;
+        return;
+      }
       if (categoryDebounceRef.current) {
         clearTimeout(categoryDebounceRef.current);
       }
@@ -1133,8 +1108,8 @@ export default function App() {
   // Gemini推奨情報を取得する
   const triggerGeminiRecommendations = async (currentData?: CompanionData, categoryOverride?: string) => {
     // すでにロード中であれば重複してリクエストしない
-    if (isLoadingRecommendations) {
-      console.log("Gemini API is already loading. Skip duplicate request.");
+    if (isLoadingRecommendationsRef.current) {
+      console.log("Gemini API is already loading. Skip duplicate request (Ref lock).");
       return;
     }
 
@@ -1166,6 +1141,8 @@ export default function App() {
       });
       return;
     }
+
+    isLoadingRecommendationsRef.current = true;
     setIsLoadingRecommendations(true);
     try {
       const { lat, lon } = currentCoords.current;
@@ -1203,20 +1180,22 @@ export default function App() {
       const fallbackResult = {
         alert: "⚠️ 【オフライン減災モード】通信不調のためローカル情報を提供中。落ち着いて行動してください。",
         actionGuide: "🧭 広域避難場所へ避難、家族への安否確認、FMラジオ等の災害情報を確認してください。",
-        spotInfo: `📍 近隣の主な指定避難所リスト:\n` + shelters.map(s => `・${s}`).join("\n")
+        spotInfo: `📍 近臨時指定避難所リスト:\n` + shelters.map(s => `・${s}`).join("\n")
       };
       setRecommendations(fallbackResult);
       if (!isMutedRef.current) {
         speakRecommendations(fallbackResult);
       }
     } finally {
+      isLoadingRecommendationsRef.current = false;
       setIsLoadingRecommendations(false);
     }
   };
 
   // 一括更新。全てのAPIを順次並行フェッチし、届いたデータから順次画面を更新。
   const triggerFullUpdate = async () => {
-    if (isUpdating) return;
+    if (isUpdatingRef.current) return;
+    isUpdatingRef.current = true;
     setIsUpdating(true);
     
     // GPS現在地を一発getCurrentPositionで取得
@@ -1253,6 +1232,7 @@ export default function App() {
         address: "位置情報を取得できません。GPSまたはネットワーク接続を確認してください。",
         zipcode: null,
       }));
+      isUpdatingRef.current = false;
       setIsUpdating(false);
       
       // GPS未取得の時の親切な案内をGeminiおすすめ欄に直接セット
@@ -1686,23 +1666,31 @@ export default function App() {
       }
     };
 
-    // すべてのAPIリクエストを非同期で開始し、届いた順に個別にアップデート
-    Promise.allSettled([
-      taskAddress(),
+    // すべてのAPIリクエストを順序を制御しながら実行：
+    // 1. まず住所 (taskAddress) を最初に直列で await して、住所と郵便番号を確実に確定させる
+    try {
+      await taskAddress();
+    } catch (err) {
+      console.error("Critical error in taskAddress within triggerFullUpdate:", err);
+    }
+
+    // 2. 住所が確定した（またはエラー終了した）後、その他のAPIを並列で実行
+    await Promise.allSettled([
       taskWeather(),
       taskAirQuality(),
       taskSeaTemp(),
       taskPOI(),
       taskEarthquake(),
       taskPowerUsage()
-    ]).finally(() => {
-      setIsUpdating(false);
-      lastUpdatedCoords.current = { lat, lon };
-      lastUpdatedDateStr.current = dateStr;
+    ]);
 
-      // 最新の全てのデータを直に流し込んで、Geminiの推薦情報を同期更新＆自動音声読み上げ
-      triggerGeminiRecommendations(mergedData);
-    });
+    setIsUpdating(false);
+    isUpdatingRef.current = false;
+    lastUpdatedCoords.current = { lat, lon };
+    lastUpdatedDateStr.current = dateStr;
+
+    // 3. 最新の住所情報を含むすべてのデータが完璧に揃った状態で、Geminiの推薦情報を同期更新＆自動音声読み上げ
+    triggerGeminiRecommendations(mergedData);
   };
 
   // 特定のパネルをタップ/クリックしたときにそのパネルだけを即時更新する関数
@@ -2321,92 +2309,96 @@ export default function App() {
     : tileOrder;
 
   return (
-    <div className="min-h-screen animate-travel-bg text-white font-sans flex flex-col overflow-x-hidden pb-44 sm:pb-[180px]">
+    <div className={`min-h-screen animate-travel-bg text-white font-sans flex flex-col overflow-x-hidden ${isFullTileMode ? "pb-6" : "pb-44 sm:pb-[180px]"}`}>
       {/* ヘッダーエリア */}
-      <header className="w-full h-[46px] bg-black/20 border-b border-white/20 relative z-40 px-5 flex items-center justify-between shadow-lg shrink-0">
-        {/* ロゴと現在地の概要 */}
-        <div className="flex items-center gap-2.5">
-          <TacticalCompassIcon />
-          <div className="flex items-center gap-2">
-            <h1 className="text-base sm:text-lg font-black text-white tracking-wider flex items-center gap-1 whitespace-nowrap">
-              旅のお供
-            </h1>
+      {!isFullTileMode && (
+        <header className="w-full h-[46px] bg-black/20 border-b border-white/20 relative z-40 px-5 flex items-center justify-between shadow-lg shrink-0">
+          {/* ロゴと現在地の概要 */}
+          <div className="flex items-center gap-2.5">
+            <TacticalCompassIcon />
+            <div className="flex items-center gap-2">
+              <h1 className="text-base sm:text-lg font-black text-white tracking-wider flex items-center gap-1 whitespace-nowrap">
+                旅のお供
+              </h1>
+            </div>
           </div>
-        </div>
 
-        {/* 一括更新・並べ替えグループ選択エリア */}
-        <div className="flex items-center gap-1.5">
-          {/* フルタイルモード切替ボタン */}
-          <button
-            onClick={() => setIsFullTileMode(!isFullTileMode)}
-            className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-bold transition-all border select-none cursor-pointer ${
-              isFullTileMode
-                ? "bg-sky-500/20 text-sky-300 border-sky-400/40 shadow-[0_0_8px_rgba(56,189,248,0.2)]"
-                : "bg-slate-800 text-slate-400 border-transparent hover:bg-slate-700 hover:text-slate-200"
-            }`}
-            title="フルタイルモード (住所とタイルのみ)"
-          >
-            <span>📱</span>
-            <span>{isFullTileMode ? "フルタイル: ON" : "フルタイル: OFF"}</span>
-          </button>
-
-          {activeCategory === "all" && (
+          {/* 一括更新・並べ替えグループ選択エリア */}
+          <div className="flex items-center gap-1.5">
+            {/* フルタイルモード切替ボタン */}
             <button
-              onClick={() => {
-                setIsSelectMode(!isSelectMode);
-                setSelectedTileIds([]);
-              }}
-              className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-bold transition-all select-none cursor-pointer ${
-                isSelectMode
-                  ? "bg-amber-500 text-slate-950 hover:bg-amber-400"
-                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              onClick={() => setIsFullTileMode(!isFullTileMode)}
+              className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-bold transition-all border select-none cursor-pointer ${
+                isFullTileMode
+                  ? "bg-sky-500/20 text-sky-300 border-sky-400/40 shadow-[0_0_8px_rgba(56,189,248,0.2)]"
+                  : "bg-slate-800 text-slate-400 border-transparent hover:bg-slate-700 hover:text-slate-200"
               }`}
+              title="フルタイルモード (住所とタイルのみ)"
             >
-              <span>🧩</span>
-              <span>{isSelectMode ? "グループ移動中" : "複数選択移動"}</span>
+              <span>📱</span>
+              <span>{isFullTileMode ? "フルタイル: ON" : "フルタイル: OFF"}</span>
             </button>
-          )}
 
-          {/* 強制一括更新ボタン */}
-          <button
-            onClick={triggerFullUpdate}
-            disabled={isUpdating}
-            className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 active:scale-95 disabled:opacity-50 transition-all font-bold border border-white px-3 py-1 rounded-md text-xs text-white shrink-0 select-none cursor-pointer"
-          >
-            <RefreshCw className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isUpdating ? "animate-spin" : ""}`} />
-            <span>一括更新</span>
-          </button>
-        </div>
-      </header>
+            {activeCategory === "all" && (
+              <button
+                onClick={() => {
+                  setIsSelectMode(!isSelectMode);
+                  setSelectedTileIds([]);
+                }}
+                className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-bold transition-all select-none cursor-pointer ${
+                  isSelectMode
+                    ? "bg-amber-500 text-slate-950 hover:bg-amber-400"
+                    : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                }`}
+              >
+                <span>🧩</span>
+                <span>{isSelectMode ? "グループ移動中" : "複数選択移動"}</span>
+              </button>
+            )}
+
+            {/* 強制一括更新ボタン */}
+            <button
+              onClick={triggerFullUpdate}
+              disabled={isUpdating}
+              className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 active:scale-95 disabled:opacity-50 transition-all font-bold border border-white px-3 py-1 rounded-md text-xs text-white shrink-0 select-none cursor-pointer"
+            >
+              <RefreshCw className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isUpdating ? "animate-spin" : ""}`} />
+              <span>一括更新</span>
+            </button>
+          </div>
+        </header>
+      )}
 
       {/* カテゴリ選択タブ */}
-      <div className="w-full bg-slate-900/60 border-b border-white/10 px-4 py-1.5 flex gap-1.5 items-center overflow-x-auto scrollbar-none shrink-0 relative z-20">
-        {[
-          { id: "all", label: "すべて", icon: "🌐" },
-          { id: "weather", label: "天候", icon: "🌈" },
-          { id: "driving", label: "運転", icon: "🚗" },
-          { id: "climbing", label: "登山", icon: "🏔️" },
-          { id: "sea", label: "海", icon: "🌊" },
-          { id: "disaster", label: "防災", icon: "🚨" },
-          { id: "custom", label: "カスタム", icon: "⭐" },
-        ].map((tab) => {
-          const isActive = activeCategory === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveCategory(tab.id as any)}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none shrink-0 border ${
-                isActive
-                  ? "bg-sky-500/15 text-sky-400 border-sky-400/40 shadow-[0_0_10px_rgba(56,189,248,0.1)]"
-                  : "bg-slate-800/40 text-slate-400 border-transparent hover:bg-slate-800/80 hover:text-slate-200"
-              }`}
-            >
-              <span>{tab.icon}</span>
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
+      {!isFullTileMode && (
+        <div className="w-full bg-slate-900/60 border-b border-white/10 px-4 py-1.5 flex gap-1.5 items-center overflow-x-auto scrollbar-none shrink-0 relative z-20">
+          {[
+            { id: "all", label: "すべて", icon: "🌐" },
+            { id: "weather", label: "天候", icon: "🌈" },
+            { id: "driving", label: "運転", icon: "🚗" },
+            { id: "climbing", label: "登山", icon: "🏔️" },
+            { id: "sea", label: "海", icon: "🌊" },
+            { id: "disaster", label: "防災", icon: "🚨" },
+            { id: "custom", label: "カスタム", icon: "⭐" },
+          ].map((tab) => {
+            const isActive = activeCategory === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveCategory(tab.id as any)}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none shrink-0 border ${
+                  isActive
+                    ? "bg-sky-500/15 text-sky-400 border-sky-400/40 shadow-[0_0_10px_rgba(56,189,248,0.1)]"
+                    : "bg-slate-800/40 text-slate-400 border-transparent hover:bg-slate-800/80 hover:text-slate-200"
+                }`}
+              >
+                <span>{tab.icon}</span>
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* グループ並べ替え操作パネル (選択モード時のみ表示) */}
       {isSelectMode && activeCategory === "all" && (
@@ -2458,7 +2450,7 @@ export default function App() {
       {/* 住所表示パネル (コンパス非表示、住所のみをシンプルに表示) */}
       <div
         ref={mainRef}
-        className={`sticky top-0 z-30 w-full px-4 py-2 flex items-center justify-start gap-1.5 text-xs border-b backdrop-blur-md transition-colors duration-300 ${addressBgClass}`}
+        className={`sticky top-0 z-30 w-full px-4 py-2 flex items-center justify-between gap-1.5 text-xs border-b backdrop-blur-md transition-colors duration-300 ${addressBgClass}`}
       >
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span className={isAddressFlashing ? "text-slate-950" : "text-sky-400"}>📍</span>
@@ -2466,6 +2458,26 @@ export default function App() {
             {data.zipcode ? `〒${data.zipcode} ` : ""}{data.address || "現在地を取得中..."}
           </span>
         </div>
+
+        {/* フルタイルモード時の、極めてコンパクトな一括更新ボタン＆通常表示切り替え */}
+        {isFullTileMode && (
+          <div className="flex items-center gap-1.5 shrink-0 select-none">
+            <button
+              onClick={triggerFullUpdate}
+              disabled={isUpdating}
+              className="flex items-center gap-1 bg-white/10 hover:bg-white/20 disabled:opacity-40 transition-all font-bold border border-white/20 px-2 py-1 rounded text-[10px] text-white cursor-pointer"
+            >
+              <RefreshCw className={`w-2.5 h-2.5 ${isUpdating ? "animate-spin" : ""}`} />
+              <span>一括更新</span>
+            </button>
+            <button
+              onClick={() => setIsFullTileMode(false)}
+              className="flex items-center gap-1 bg-sky-950/50 hover:bg-sky-900/50 border border-sky-500/20 text-sky-300 px-2 py-1 rounded text-[10px] font-bold cursor-pointer"
+            >
+              <span>📱 通常</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* カスタムカテゴリの設定パネル (カスタムタブ選択時のみ表示) */}

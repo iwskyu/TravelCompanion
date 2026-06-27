@@ -7,6 +7,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { MapPin, Mic, Compass } from "lucide-react";
 import { fetchIpCoords } from "../utils/api";
+import { TacticalCompassIcon } from "./TacticalCompassIcon";
 
 interface InitialOverlayProps {
   onStart: (coords: { lat: number; lon: number } | null, audioStream: MediaStream | null) => void;
@@ -75,9 +76,9 @@ export function InitialOverlay({ onStart }: InitialOverlayProps) {
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 0.6 }}
-            className="w-20 h-20 bg-gradient-to-tr from-slate-900 to-slate-950 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/10 mx-auto border border-slate-800"
+            className="flex items-center justify-center mx-auto"
           >
-            <Compass className="w-12 h-12 text-sky-400 animate-[spin_30s_linear_infinite]" />
+            <TacticalCompassIcon size="xl" />
           </motion.div>
           
           <motion.h1
