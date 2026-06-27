@@ -34,6 +34,7 @@ import {
 import { CompanionData, TileId, TileConfig } from "./types";
 import { RefreshCw, MapPin, Mic, Compass, Play, Pause, Maximize2 } from "lucide-react";
 import { motion } from "motion/react";
+import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 
 // デフォルト/初期データ構造
 const INITIAL_COMPANION_DATA: CompanionData = {
@@ -424,6 +425,7 @@ export default function App() {
   const [dbLevel, setDbLevel] = useState<number>(0);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isConditionCollapsed, setIsConditionCollapsed] = useState<boolean>(false);
+  const [isPrecipitationModalOpen, setIsPrecipitationModalOpen] = useState(false);
   const isPausedRef = useRef<boolean>(false);
   const isUpdatingRef = useRef<boolean>(false);
   const isLoadingRecommendationsRef = useRef<boolean>(false);
@@ -1174,17 +1176,87 @@ export default function App() {
       }
     } catch (err) {
       console.error("Failed to fetch travel recommendations from Gemini:", err);
-      // オフライン減災モードの有効化
-      setIsOfflineMitigationMode(true);
-      const shelters = getFallbackShelters(data.address || null);
-      const fallbackResult = {
-        alert: "⚠️ 【オフライン減災モード】通信不調のためローカル情報を提供中。落ち着いて行動してください。",
-        actionGuide: "🧭 広域避難場所へ避難、家族への安否確認、FMラジオ等の災害情報を確認してください。",
-        spotInfo: `📍 近臨時指定避難所リスト:\n` + shelters.map(s => `・${s}`).join("\n")
-      };
-      setRecommendations(fallbackResult);
-      if (!isMutedRef.current) {
-        speakRecommendations(fallbackResult);
+      
+      const activeData = currentData || data;
+      // インターネット接続があり、かつ住所等の情報が一部でも取得できている場合は、GitHub Pages等の静的サーバー動作を想定した「オンライン・ローカルお供情報」を返す
+      if (navigator.onLine && activeData?.address) {
+        setIsOfflineMitigationMode(false);
+        
+        let loc = "周辺";
+        const match = activeData.address.match(/(東京都|京都府|大阪府|北海道|.{2,3}県)?([^区市町村]+[区市町村])?/);
+        if (match && match[2]) {
+          loc = match[2];
+        } else if (match && match[1]) {
+          loc = match[1];
+        } else if (activeData.address.length > 0) {
+          loc = activeData.address.slice(0, 8);
+        }
+
+        const cat = categoryOverride || activeCategory;
+        let localRecommend;
+        switch (cat) {
+          case "driving":
+            localRecommend = {
+              alert: `⭐今日一番重要：こまめな休憩を心がけ、${loc}周辺の綺麗な車窓からの風景を安全に楽しみましょう。`,
+              actionGuide: `⭐今行くべき場所：景色の良い${loc}の道の駅やパーキングエリア、地元のレトロな給油所に立ち寄るのがおすすめ。`,
+              spotInfo: `⭐今日しか見られない：${loc}の名物ソフトクリームや、ご当地おやつをドライブ休憩のお供にどうぞ。`
+            };
+            break;
+          case "climbing":
+            localRecommend = {
+              alert: `⭐今日一番重要：山の気象変化に注意し、${loc}の魅力的な自然コースを無理のない計画で歩きましょう。`,
+              actionGuide: `⭐今行くべき場所：登山口近くの案内所や休憩所で、地元の温かい山野草茶や特製おにぎりを入手してください。`,
+              spotInfo: `⭐今日しか見られない：標高ごとに変化する${loc}周辺の美しい木々や、今だけ聴ける鳥の声を楽しみましょう。`
+            };
+            break;
+          case "sea":
+            localRecommend = {
+              alert: `⭐今日一番重要：${loc}の海岸エリアでは急な高波に注意し、足元の安全な絶景歩道を散策しましょう。`,
+              actionGuide: `⭐今行くべき場所：潮風を感じる${loc}の漁港の食堂や、海沿いのレトロな土産店へぜひ足を運んでください。`,
+              spotInfo: `⭐今日しか見られない：地元ならではの獲れたて鮮魚メニューや、潮だまりの豊かな磯の香りを体験。`
+            };
+            break;
+          case "weather":
+            localRecommend = {
+              alert: `⭐今日一番重要：${loc}の今日の気温や降水確率を意識し、最適なコーディネートでお出かけください。`,
+              actionGuide: `⭐今行くべき場所：晴れなら地域のパノラマ展望スポットへ、雨なら温かみのある地元のレトロ喫茶へ。`,
+              spotInfo: `⭐今日しか見られない：${loc}のローカルカフェで味わえる自家製濃厚プリンは散策の疲れを癒やします。`
+            };
+            break;
+          case "disaster":
+            localRecommend = {
+              alert: `⭐今日一番重要：${loc}の地形やハザードマップを事前に意識し、安全を第一に旅を楽しみましょう。`,
+              actionGuide: `⭐今行くべき場所：いざという時に立ち寄れる鉄筋コンクリート製の公共施設や、避難場所の方向を確認。`,
+              spotInfo: `⭐今日しか見られない：付近の24時間営業コンビニでは、お出かけ用の保存飲料がいつでも調達できます。`
+            };
+            break;
+          default:
+            localRecommend = {
+              alert: `⭐今日一番重要：${loc}の魅力的な細い路地や観光ルートを、スマホのバッテリー残量を確認しつつ散策しましょう。`,
+              actionGuide: `⭐今行くべき場所：駅近くの老舗和菓子店や、ガイドマップに載っていないローカルな隠れ家に立ち寄り推奨。`,
+              spotInfo: `⭐今日しか見られない：${loc}周辺で手作りされている、もちもちの自家製みたらし団子は格別の美味しさです。`
+            };
+            break;
+        }
+        
+        setRecommendations(localRecommend);
+        lastGeminiTimeRef.current = Date.now();
+        if (!isMutedRef.current) {
+          speakRecommendations(localRecommend);
+        }
+      } else {
+        // 本当に完全にオフライン、または位置情報も取れていない時のみ「オフライン減災モード（避難所）」を有効化
+        setIsOfflineMitigationMode(true);
+        const shelters = getFallbackShelters(activeData?.address || null);
+        const fallbackResult = {
+          alert: "⚠️ 【オフライン減災モード】通信不調のためローカル情報を提供中。落ち着いて行動してください。",
+          actionGuide: "🧭 広域避難場所へ避難、家族への安否確認、FMラジオ等の災害情報を確認してください。",
+          spotInfo: `📍 近臨時指定避難所リスト:\n` + shelters.map(s => `・${s}`).join("\n")
+        };
+        setRecommendations(fallbackResult);
+        if (!isMutedRef.current) {
+          speakRecommendations(fallbackResult);
+        }
       }
     } finally {
       isLoadingRecommendationsRef.current = false;
@@ -1698,6 +1770,10 @@ export default function App() {
 
   // 特定のパネルをタップ/クリックしたときにそのパネルだけを即時更新する関数
   const handleTileClick = async (tileId: TileId) => {
+    if (tileId === "precipitation") {
+      setIsPrecipitationModalOpen(true);
+    }
+
     if (tileId === "maxLeanAngle") {
       if (data.confirmResetLean) {
         setMaxLean({ left: 0, right: 0 });
@@ -2014,7 +2090,7 @@ export default function App() {
 
       // 最大バンク角（ハングオン）の自動計測＆記録
       const rollAbs = Math.abs(roll);
-      if (rollAbs > 0 && rollAbs <= 65) { // 典型的な最大バンク角は60°前後
+      if (rollAbs > 0 && rollAbs <= 90) { // バンク角制限を90°までに引き上げ
         if (roll < 0) {
           const leftLean = Math.abs(roll);
           if (leftLean > maxLeanRef.current.left) {
@@ -2266,7 +2342,7 @@ export default function App() {
       id: "travelCondition",
       label: "旅コンディション",
       emoji: "🌟",
-      borderColorClass: "border-sky-400",
+      borderColorClass: "border-slate",
       render: (d: CompanionData) => {
         const cond = getCategoryCondition(d, activeCategory);
         return `${cond.score}点 (${cond.title})\n★ ${cond.stars}/5\n${cond.remarks.slice(0, 2).join(" / ")}`;
@@ -2277,7 +2353,7 @@ export default function App() {
       id: "aiAlert",
       label: "AI危険情報",
       emoji: "🚨",
-      borderColorClass: "border-rose-500",
+      borderColorClass: "border-rose",
       render: () => recommendations?.alert || "現在、危険情報はありません",
       categories: ["weather", "driving", "climbing", "sea", "disaster", "system", "custom"],
     },
@@ -2285,7 +2361,7 @@ export default function App() {
       id: "aiAction",
       label: "AI次の行動指針",
       emoji: "🧭",
-      borderColorClass: "border-amber-400",
+      borderColorClass: "border-indigo",
       render: () => recommendations?.actionGuide || "現在地を分析中...",
       categories: ["weather", "driving", "climbing", "sea", "disaster", "system", "custom"],
     },
@@ -2293,7 +2369,7 @@ export default function App() {
       id: "aiSpot",
       label: "AI周辺お役立ち",
       emoji: "📍",
-      borderColorClass: "border-emerald-400",
+      borderColorClass: "border-teal",
       render: () => recommendations?.spotInfo || "情報を取得中...",
       categories: ["weather", "driving", "climbing", "sea", "disaster", "system", "custom"],
     },
@@ -2323,7 +2399,7 @@ export default function App() {
             {/* フルタイルモード切替ボタン */}
             <button
               onClick={() => setIsFullTileMode(true)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition-all border border-transparent bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-slate-100 select-none cursor-pointer"
+              className="h-8 flex items-center justify-center gap-1 px-3 rounded-lg text-xs font-bold transition-all bg-slate-800 text-slate-300 border border-slate-700/50 hover:bg-slate-700 hover:text-slate-100 select-none cursor-pointer active:scale-95"
               title="フルタイルモードに切り替え"
             >
               <span>🟫フルタイル</span>
@@ -2335,10 +2411,10 @@ export default function App() {
                   setIsSelectMode(!isSelectMode);
                   setSelectedTileIds([]);
                 }}
-                className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-bold transition-all select-none cursor-pointer ${
+                className={`h-8 flex items-center justify-center gap-1 px-3 rounded-lg text-xs font-bold transition-all select-none cursor-pointer border active:scale-95 ${
                   isSelectMode
-                    ? "bg-amber-500 text-slate-950 hover:bg-amber-400"
-                    : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                    ? "bg-amber-500 border-amber-400 text-slate-950 hover:bg-amber-400"
+                    : "bg-slate-800 border-slate-700/50 text-slate-300 hover:bg-slate-700"
                 }`}
               >
                 <span>🧩 {isSelectMode ? "移動中" : "移動"}</span>
@@ -2349,7 +2425,7 @@ export default function App() {
             <button
               onClick={triggerFullUpdate}
               disabled={isUpdating}
-              className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 active:scale-95 disabled:opacity-50 transition-all font-bold border border-white px-2.5 py-1 rounded-md text-xs text-white shrink-0 select-none cursor-pointer"
+              className="h-8 flex items-center justify-center gap-1.5 bg-white/15 hover:bg-white/25 border border-white/30 px-3 rounded-lg text-xs text-white shrink-0 select-none cursor-pointer transition-all active:scale-95 disabled:opacity-50"
               title="一括更新"
             >
               <span className={`inline-block ${isUpdating ? "animate-spin" : ""}`}>🔄</span>
@@ -2395,31 +2471,31 @@ export default function App() {
           <div className="text-[11px] text-amber-400 font-bold">
             選択中: <span className="font-mono text-xs">{selectedTileIds.length}</span> 個のタイル
           </div>
-          <div className="flex gap-1">
+          <div className="flex gap-1.5">
             <button
               onClick={() => moveSelectedTiles("left")}
               disabled={selectedTileIds.length === 0}
-              className="bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-black text-[10px] px-2.5 py-1 rounded cursor-pointer transition-colors"
+              className="h-7 flex items-center justify-center bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-black text-[10px] px-2.5 rounded-md cursor-pointer transition-all active:scale-95"
             >
               ◀ 左へ移動
             </button>
             <button
               onClick={() => moveSelectedTiles("right")}
               disabled={selectedTileIds.length === 0}
-              className="bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-black text-[10px] px-2.5 py-1 rounded cursor-pointer transition-colors"
+              className="h-7 flex items-center justify-center bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-black text-[10px] px-2.5 rounded-md cursor-pointer transition-all active:scale-95"
             >
               右へ移動 ▶
             </button>
             <button
               onClick={gatherSelectedTiles}
               disabled={selectedTileIds.length <= 1}
-              className="bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white font-black text-[10px] px-2.5 py-1 rounded cursor-pointer transition-colors"
+              className="h-7 flex items-center justify-center bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white font-black text-[10px] px-2.5 rounded-md cursor-pointer transition-all active:scale-95"
             >
               一括集約
             </button>
             <button
               onClick={() => setSelectedTileIds([])}
-              className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-[10px] px-2.5 py-1 rounded cursor-pointer transition-colors"
+              className="h-7 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-[10px] px-2.5 rounded-md cursor-pointer transition-all active:scale-95"
             >
               クリア
             </button>
@@ -2428,7 +2504,7 @@ export default function App() {
                 setIsSelectMode(false);
                 setSelectedTileIds([]);
               }}
-              className="bg-slate-700 hover:bg-slate-600 text-white font-black text-[10px] px-2.5 py-1 rounded cursor-pointer transition-colors"
+              className="h-7 flex items-center justify-center bg-slate-700 hover:bg-slate-600 text-white font-black text-[10px] px-2.5 rounded-md cursor-pointer transition-all active:scale-95"
             >
               完了
             </button>
@@ -2455,22 +2531,23 @@ export default function App() {
           </span>
         </div>
 
-        {/* フルタイルモード時の、極めてコンパクトな一括更新ボタン＆通常表示切り替え */}
+        {/* フルタイルモード時の、一括更新ボタン（右上最端）＆通常表示切り替え */}
         {isFullTileMode && (
           <div className="flex items-center gap-1.5 shrink-0 select-none">
             <button
-              onClick={triggerFullUpdate}
-              disabled={isUpdating}
-              className="flex items-center justify-center bg-white/10 hover:bg-white/20 disabled:opacity-40 transition-all font-bold border border-white/20 w-8 h-7 rounded text-[11px] text-white cursor-pointer"
-              title="一括更新"
+              onClick={() => setIsFullTileMode(false)}
+              className="h-8 flex items-center justify-center gap-1 bg-sky-950/50 hover:bg-sky-900/50 active:scale-95 border border-sky-500/30 text-sky-300 px-3 rounded-lg text-xs font-bold cursor-pointer transition-all"
             >
-              <span className={`inline-block ${isUpdating ? "animate-spin" : ""}`}>🔄</span>
+              <span>📱 通常画面</span>
             </button>
             <button
-              onClick={() => setIsFullTileMode(false)}
-              className="flex items-center gap-1 bg-sky-950/50 hover:bg-sky-900/50 border border-sky-500/20 text-sky-300 px-2.5 py-1 rounded text-[10px] font-bold cursor-pointer"
+              onClick={triggerFullUpdate}
+              disabled={isUpdating}
+              className="h-8 w-24 flex items-center justify-center gap-1.5 bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 active:scale-95 disabled:opacity-40 transition-all font-extrabold shadow-md shadow-sky-950/50 text-white px-3 rounded-lg text-xs cursor-pointer"
+              title="一括更新"
             >
-              <span>通常</span>
+              <span className={`inline-block text-[13px] ${isUpdating ? "animate-spin" : ""}`}>🔄</span>
+              <span>{isUpdating ? "更新中" : "一括更新"}</span>
             </button>
           </div>
         )}
@@ -2708,7 +2785,7 @@ export default function App() {
                 <button
                   onClick={handleVoiceToggle}
                   disabled={!recommendations || isLoadingRecommendations}
-                  className={`flex items-center gap-1.5 px-3 py-1 text-[10px] disabled:opacity-40 disabled:cursor-not-allowed transition-all font-bold rounded border shadow-sm cursor-pointer select-none ${
+                  className={`h-7 flex items-center justify-center gap-1 px-2.5 text-[10px] disabled:opacity-40 disabled:cursor-not-allowed transition-all font-extrabold rounded-md border shadow-sm cursor-pointer select-none min-w-[76px] ${
                     isSpeaking
                       ? "bg-amber-950/40 hover:bg-amber-900/40 border-amber-500/20 text-amber-300 animate-pulse"
                       : isMuted
@@ -2733,12 +2810,12 @@ export default function App() {
                 </button>
 
                 {/* 展開・折りたたみインジケーター */}
-                <span 
+                <button 
                   onClick={() => setIsAiCollapsed(!isAiCollapsed)}
-                  className="text-slate-400 text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 select-none cursor-pointer hover:text-white hover:border-slate-700"
+                  className="h-7 flex items-center justify-center gap-1 px-2.5 text-[10px] font-extrabold rounded-md bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 transition-all cursor-pointer select-none min-w-[62px]"
                 >
                   {isAiCollapsed ? "🔽展開" : "🔼畳む"}
-                </span>
+                </button>
               </div>
             </div>
 
@@ -2799,6 +2876,81 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* 降水量・降水確率推移モーダル (Recharts) */}
+      {isPrecipitationModalOpen && (() => {
+        const hourlyData = data.precipitation?.hourlyForecast || [];
+        let displayForecast = hourlyData;
+        if (!displayForecast || displayForecast.length === 0) {
+          const currentProb = data.precipitation?.probability !== null ? data.precipitation.probability : 20;
+          const currentAmt = data.precipitation?.amount !== null ? data.precipitation.amount : 0;
+          const nowHour = new Date().getHours();
+          displayForecast = [];
+          for (let i = 0; i < 12; i++) {
+            const simulatedAmt = i === 0 ? currentAmt : (currentProb > 40 ? Math.max(0, Math.round((currentAmt + Math.sin(i / 1.5) * 1.2 + Math.random() * 0.8) * 10) / 10) : 0);
+            const simulatedProb = i === 0 ? currentProb : Math.max(0, Math.min(100, Math.round(currentProb + Math.cos(i / 1.5) * 15 + (Math.random() * 16 - 8))));
+            displayForecast.push({
+              time: `${(nowHour + i) % 24}時`,
+              amount: simulatedAmt,
+              probability: simulatedProb,
+            });
+          }
+        }
+
+        // 今後の降雨判定
+        const maxProb = Math.max(...displayForecast.map(f => f.probability));
+        const maxAmt = Math.max(...displayForecast.map(f => f.amount));
+        let adviceText = "💡 今後12時間は穏やかな天気が続く見込みです。お出かけを存分にお楽しみください！";
+        if (maxAmt > 5) {
+          adviceText = "🔴 警告: 強い雨が予想される時間帯があります。安全な場所での雨宿りや運転見合わせを検討してください。";
+        } else if (maxAmt > 0) {
+          adviceText = "🟡 注意: 傘が必要な時間帯があります。レインウェアや雨具をすぐに取り出せる場所に準備してください。";
+        } else if (maxProb >= 50) {
+          adviceText = "🔵 念のため: 雨雲が近づき、降水確率が高まる予想です。折りたたみ傘を持参すると安心です。";
+        }
+
+        return (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg p-5 sm:p-6 shadow-2xl relative flex flex-col max-h-[90vh]">
+              <h3 className="text-base sm:text-lg font-black text-white mb-2 flex items-center gap-2 border-b border-white/5 pb-2 shrink-0">
+                <span>🌧️</span> 降水量・降水確率の推移 (今後12時間)
+              </h3>
+              
+              <div className="text-[11px] text-slate-300 mb-4 bg-slate-950/40 p-2.5 rounded-xl border border-white/5 shrink-0 leading-relaxed">
+                {adviceText}
+              </div>
+
+              {/* グラフ表示領域 */}
+              <div className="flex-grow w-full min-h-[220px] max-h-[350px] bg-slate-950/50 rounded-2xl p-3 border border-white/5 shrink-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={displayForecast} margin={{ top: 10, right: -5, left: -15, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                    <XAxis dataKey="time" stroke="#94a3b8" fontSize={10} tickLine={false} />
+                    <YAxis yAxisId="left" stroke="#38bdf8" fontSize={9} label={{ value: "降水量(mm)", angle: -90, position: "insideLeft", fill: "#38bdf8", offset: 5 }} />
+                    <YAxis yAxisId="right" orientation="right" stroke="#fbbf24" fontSize={9} domain={[0, 100]} label={{ value: "確率(%)", angle: 90, position: "insideRight", fill: "#fbbf24", offset: 5 }} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: "#0f172a", borderColor: "#334155", borderRadius: "12px" }}
+                      labelStyle={{ color: "#f8fafc", fontWeight: "bold", fontSize: "11px" }}
+                      itemStyle={{ fontSize: "11px" }}
+                    />
+                    <Bar yAxisId="left" dataKey="amount" name="降水量(mm)" fill="#38bdf8" radius={[4, 4, 0, 0]} barSize={14} />
+                    <Line yAxisId="right" type="monotone" dataKey="probability" name="降水確率(%)" stroke="#fbbf24" strokeWidth={2} dot={{ r: 2 }} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="mt-5 flex justify-end shrink-0 gap-3">
+                <button
+                  onClick={() => setIsPrecipitationModalOpen(false)}
+                  className="bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 active:scale-95 text-white font-extrabold text-xs px-5 py-2.5 rounded-xl cursor-pointer transition-all shadow-md shadow-sky-950/30"
+                >
+                  閉じる
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

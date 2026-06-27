@@ -20,7 +20,7 @@ export interface CompanionData {
   prefecturalCapital: { name: string; distance: number; bearing: number } | null;
 
   weather: { code: number; temp: number; minTemp?: number | null; maxTemp?: number | null } | null;
-  precipitation: { probability: number | null; amount: number | null } | null;
+  precipitation: { probability: number | null; amount: number | null; hourlyForecast?: { time: string; amount: number; probability: number }[] } | null;
   rainCloudApproach: string | null;
   uvIndex: { index: number; level: string } | null;
   sunrise: { time: string; bearing: number | null } | null;

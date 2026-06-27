@@ -127,10 +127,7 @@ export function CompanionTile({
   };
 
   let fontSizeClass = getFontSizeClass(valueString);
-  if (config.id === "dbLevel") {
-    // 周囲の静かさの値はフォントサイズを明確に小さくする
-    fontSizeClass = "text-[11px] sm:text-[12px] md:text-[13px] font-bold leading-snug";
-  } else if (config.id === "earthquake") {
+  if (config.id === "earthquake") {
     // 地震・防災情報の値のフォントを小さく調整
     fontSizeClass = "text-[11px] sm:text-[12px] md:text-[13px] font-bold leading-normal text-center tracking-wide px-0.5 self-center w-full overflow-y-auto max-h-[46px]";
   } else if (config.id === "magicHour") {
@@ -141,12 +138,22 @@ export function CompanionTile({
   // 枠のグラデーション色を取得
   const getGradientColors = (borderColor: string) => {
     switch (borderColor) {
+      case "border-cyan":
+        return "from-cyan-400/80 to-blue-500/80";
+      case "border-amber":
+        return "from-amber-400/80 to-orange-500/80";
+      case "border-teal":
+        return "from-teal-400/80 to-emerald-500/80";
+      case "border-rose":
+        return "from-rose-500/80 to-red-600/80";
+      case "border-indigo":
+        return "from-indigo-400/80 to-purple-600/80";
+      case "border-slate":
+        return "from-slate-400/60 to-slate-600/60";
       case "border-white":
         return "from-slate-400/60 to-slate-600/60";
       case "border-blue":
         return "from-sky-400/80 to-indigo-600/80";
-      case "border-indigo":
-        return "from-indigo-400/80 to-purple-600/80";
       case "border-yellow":
         return "from-amber-400/80 to-orange-500/80";
       case "border-green":
