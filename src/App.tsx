@@ -203,7 +203,7 @@ function getCategoryCondition(data: CompanionData, category: string): TravelCond
       break;
 
     case "driving":
-      title = "ドライブ＆ツーリングコンディション";
+      title = "ドライブコンディション";
       icon = "🚗";
       if (data.trafficStatus) {
         if (data.trafficStatus.includes("順調")) {
@@ -233,7 +233,7 @@ function getCategoryCondition(data: CompanionData, category: string): TravelCond
       break;
 
     case "climbing":
-      title = "山登りコンディション";
+      title = "登山コンディション";
       icon = "🏔️";
       if (data.weather) {
         const code = data.weather.code;
@@ -594,20 +594,20 @@ export default function App() {
   const [cachedTiles, setCachedTiles] = useState<Record<TileId, boolean>>({});
 
   // タイルの順序（ドラッグ＆ドロップによる並べ替え対応・ローカルストレージ自動復元付き）
+  // ユーザーの「再度APIベースでソートして」という指示に対応するため、初期状態は常に ALL_TILES_CONFIG の最新の並び順（APIベース）にします。
   const [tileOrder, setTileOrder] = useState<TileId[]>(() => {
+    const defaultIds = ALL_TILES_CONFIG.map((c) => c.id);
     try {
       const saved = localStorage.getItem("tile_order");
       if (saved) {
-        const parsed = JSON.parse(saved) as TileId[];
-        const validIds = ALL_TILES_CONFIG.map((c) => c.id);
-        const filtered = parsed.filter((id) => validIds.includes(id));
-        const missing = validIds.filter((id) => !filtered.includes(id));
-        return [...filtered, ...missing];
+        // 常にAPIベースの順序（ALL_TILES_CONFIGの定義順）を厳密に優先します。
+        localStorage.setItem("tile_order", JSON.stringify(defaultIds));
+        return defaultIds;
       }
     } catch (e) {
       console.warn("Failed to parse tile order from localStorage", e);
     }
-    return ALL_TILES_CONFIG.map((c) => c.id);
+    return defaultIds;
   });
 
   // タイルの順序が変化したときにlocalStorageに保存
@@ -1381,6 +1381,7 @@ export default function App() {
     const taskAddress = async () => {
       if (!moved && data.address && data.zipcode) {
         console.log("Battery Save: Skip Nominatim API because position hasn't changed significantly.");
+        setIsOfflineMitigationMode(false);
         return;
       }
       try {
@@ -1403,6 +1404,8 @@ export default function App() {
           address: false,
           zipcode: false,
         }));
+        // 住所取得できたら減災モードを解除
+        setIsOfflineMitigationMode(false);
       } catch (err) {
         console.error("fetchAddressAndZip failed in triggerFullUpdate", err);
         setCachedTiles((prev) => ({
@@ -2298,15 +2301,7 @@ export default function App() {
 
   const combinedConfigs = [...ALL_TILES_CONFIG, ...virtualTiles];
 
-  const displayedTileOrder = isFullTileMode
-    ? [
-        "travelCondition",
-        "aiAlert",
-        "aiAction",
-        "aiSpot",
-        ...tileOrder.filter((id) => !["travelCondition", "aiAlert", "aiAction", "aiSpot"].includes(id)),
-      ]
-    : tileOrder;
+  const displayedTileOrder = tileOrder;
 
   return (
     <div className={`min-h-screen animate-travel-bg text-white font-sans flex flex-col overflow-x-hidden ${isFullTileMode ? "pb-6" : "pb-44 sm:pb-[180px]"}`}>
@@ -2327,16 +2322,11 @@ export default function App() {
           <div className="flex items-center gap-1.5">
             {/* フルタイルモード切替ボタン */}
             <button
-              onClick={() => setIsFullTileMode(!isFullTileMode)}
-              className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-bold transition-all border select-none cursor-pointer ${
-                isFullTileMode
-                  ? "bg-sky-500/20 text-sky-300 border-sky-400/40 shadow-[0_0_8px_rgba(56,189,248,0.2)]"
-                  : "bg-slate-800 text-slate-400 border-transparent hover:bg-slate-700 hover:text-slate-200"
-              }`}
-              title="フルタイルモード (住所とタイルのみ)"
+              onClick={() => setIsFullTileMode(true)}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition-all border border-transparent bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-slate-100 select-none cursor-pointer"
+              title="フルタイルモードに切り替え"
             >
-              <span>📱</span>
-              <span>{isFullTileMode ? "フルタイル: ON" : "フルタイル: OFF"}</span>
+              <span>🟫フルタイル</span>
             </button>
 
             {activeCategory === "all" && (
@@ -2351,8 +2341,7 @@ export default function App() {
                     : "bg-slate-800 text-slate-300 hover:bg-slate-700"
                 }`}
               >
-                <span>🧩</span>
-                <span>{isSelectMode ? "グループ移動中" : "複数選択移動"}</span>
+                <span>🧩 {isSelectMode ? "移動中" : "移動"}</span>
               </button>
             )}
 
@@ -2360,10 +2349,10 @@ export default function App() {
             <button
               onClick={triggerFullUpdate}
               disabled={isUpdating}
-              className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 active:scale-95 disabled:opacity-50 transition-all font-bold border border-white px-3 py-1 rounded-md text-xs text-white shrink-0 select-none cursor-pointer"
+              className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 active:scale-95 disabled:opacity-50 transition-all font-bold border border-white px-2.5 py-1 rounded-md text-xs text-white shrink-0 select-none cursor-pointer"
+              title="一括更新"
             >
-              <RefreshCw className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isUpdating ? "animate-spin" : ""}`} />
-              <span>一括更新</span>
+              <span className={`inline-block ${isUpdating ? "animate-spin" : ""}`}>🔄</span>
             </button>
           </div>
         </header>
@@ -2452,10 +2441,17 @@ export default function App() {
         ref={mainRef}
         className={`sticky top-0 z-30 w-full px-4 py-2 flex items-center justify-between gap-1.5 text-xs border-b backdrop-blur-md transition-colors duration-300 ${addressBgClass}`}
       >
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
           <span className={isAddressFlashing ? "text-slate-950" : "text-sky-400"}>📍</span>
-          <span className={`truncate font-bold tracking-wide text-sm ${isAddressFlashing ? "text-slate-950" : "text-slate-200"}`}>
-            {data.zipcode ? `〒${data.zipcode} ` : ""}{data.address || "現在地を取得中..."}
+          <span className={`flex-1 font-bold tracking-wide text-sm ${isAddressFlashing ? "text-slate-950" : "text-slate-200"} overflow-hidden`}>
+            {(() => {
+              const MarqueeTag = "marquee" as any;
+              return (
+                <MarqueeTag scrollamount="3" className="w-full align-middle">
+                  {data.zipcode ? `〒${data.zipcode} ` : ""}{data.address || "現在地を取得中..."}
+                </MarqueeTag>
+              );
+            })()}
           </span>
         </div>
 
@@ -2465,16 +2461,16 @@ export default function App() {
             <button
               onClick={triggerFullUpdate}
               disabled={isUpdating}
-              className="flex items-center gap-1 bg-white/10 hover:bg-white/20 disabled:opacity-40 transition-all font-bold border border-white/20 px-2 py-1 rounded text-[10px] text-white cursor-pointer"
+              className="flex items-center justify-center bg-white/10 hover:bg-white/20 disabled:opacity-40 transition-all font-bold border border-white/20 w-8 h-7 rounded text-[11px] text-white cursor-pointer"
+              title="一括更新"
             >
-              <RefreshCw className={`w-2.5 h-2.5 ${isUpdating ? "animate-spin" : ""}`} />
-              <span>一括更新</span>
+              <span className={`inline-block ${isUpdating ? "animate-spin" : ""}`}>🔄</span>
             </button>
             <button
               onClick={() => setIsFullTileMode(false)}
-              className="flex items-center gap-1 bg-sky-950/50 hover:bg-sky-900/50 border border-sky-500/20 text-sky-300 px-2 py-1 rounded text-[10px] font-bold cursor-pointer"
+              className="flex items-center gap-1 bg-sky-950/50 hover:bg-sky-900/50 border border-sky-500/20 text-sky-300 px-2.5 py-1 rounded text-[10px] font-bold cursor-pointer"
             >
-              <span>📱 通常</span>
+              <span>通常</span>
             </button>
           </div>
         )}
@@ -2552,8 +2548,8 @@ export default function App() {
                 <span className="text-sm font-black font-mono text-emerald-400">
                   {cond.score}点
                 </span>
-                <span className="text-[9px] text-slate-500 font-bold bg-slate-950/40 px-1.5 py-0.5 rounded">
-                  詳細 ＋
+                <span className="text-[9px] text-slate-400 font-bold bg-slate-950/40 px-1.5 py-0.5 rounded">
+                  🔽開く
                 </span>
               </div>
             </div>
@@ -2569,8 +2565,8 @@ export default function App() {
             <div className="flex-grow">
               <div className="text-xs text-sky-400 font-extrabold tracking-wider mb-1 flex items-center gap-1.5">
                 <span>{cond.icon}</span> {cond.title}
-                <span className="text-[9px] text-slate-500 font-normal normal-case ml-auto shrink-0 select-none">
-                  タップで畳む −
+                <span className="text-[9px] text-slate-400 font-bold ml-auto shrink-0 select-none">
+                  🔼畳む
                 </span>
               </div>
               <div className="flex items-center gap-1.5 my-1">
@@ -2741,7 +2737,7 @@ export default function App() {
                   onClick={() => setIsAiCollapsed(!isAiCollapsed)}
                   className="text-slate-400 text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 select-none cursor-pointer hover:text-white hover:border-slate-700"
                 >
-                  {isAiCollapsed ? "展開 ＋" : "畳む −"}
+                  {isAiCollapsed ? "🔽展開" : "🔼畳む"}
                 </span>
               </div>
             </div>
